@@ -1,5 +1,7 @@
 # 链取（LinkFetch）
 
+**当前版本：v1.6.4（versionCode 16）**
+
 Android 应用：粘贴或自动识别**某书 / 某音 / 某博 / 某推**链接，一键提取**无水印**图片和视频并保存到相册。
 
 **默认「App 直连」模式：无需服务器、无需任何配置，安装 APK 即可使用。**（某书、某音、某博已验证可直连；某推 走其 syndication 公开接口，需要能访问海外网络。）
@@ -16,16 +18,16 @@ agent-project/
 │   │   ├── platform.py      # 域名 -> 平台识别
 │   │   ├── models.py        # 数据模型与统一错误码
 │   │   └── parsers/         # 平台解析器（xhs / douyin / weibo / x）
-│   ├── tests/               # pytest 单元测试（30 个）
+│   ├── tests/               # pytest 单元测试（覆盖平台识别 / API / 各解析器）
 │   ├── requirements.txt
 │   ├── Dockerfile
 │   └── docker-compose.yml
 └── android/                 # Android 客户端（Kotlin + Jetpack Compose）
     └── app/src/
         ├── main/java/com/linkfetch/app/
-        │   ├── data/parser/  # App 直连解析器（xhs / douyin / weibo）
-        │   ├── data/         # 网络、Room 历史、DataStore 设置、相册下载
-        │   └── ui/           # 首页 / 解析结果 / 历史 / 设置 + 主题
+        │   ├── data/parser/  # App 直连解析器（xhs / douyin / weibo / x）+ 页面 JSON 提取、Live 图
+        │   ├── data/         # api 后端 HTTP 客户端、Room 历史、DataStore 设置、download 相册下载
+        │   └── ui/           # 首页 / 解析结果 / 历史 / 设置 + 导航 / 组件 / 主题
         └── test/             # JVM 单元测试
 ```
 
@@ -88,4 +90,5 @@ cd android && $env:LINKFETCH_REAL_TEST='1'; .\gradlew.bat :app:testDebugUnitTest
 - **v1 仅单链接解析**：批量解析（多行链接）留作 v2 扩展。
 
 ## 更新记录
+- **v1.6.x**：新增 Live 图（实况 / 动态照片）支持，某书 / 某音 / 某博 的实况图可合成为 Motion Photo 保存（[MotionPhotoWriter](android/app/src/main/java/com/linkfetch/app/data/download/MotionPhotoWriter.kt)）；某推 长视频支持 HLS / VMAP 解析与 vxtwitter / fxtwitter 回退；历史记录支持平台筛选与多选删除。
 - **v1.5.0**：新增 某推 平台解析，支持图片原图与最高画质视频；历史记录新增 某推 筛选。
