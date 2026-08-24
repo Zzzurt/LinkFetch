@@ -1,0 +1,12 @@
+services:
+  linkfetch-api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - API_TOKEN=${API_TOKEN:-}
+      - XHS_COOKIE=${XHS_COOKIE:-}
+      - DOUYIN_COOKIE=${DOUYIN_COOKIE:-}
+      - WEIBO_COOKIE=${WEIBO_COOKIE:-}
+    restart: unless-stopped
+

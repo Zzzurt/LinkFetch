@@ -1,0 +1,11 @@
+<resources>
+    <style name="Theme.LinkFetch" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_background</item>
+        <!-- 浅色模式下使用深色状态栏/导航栏图标，保证白色背景上清晰可见 -->
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>
+
