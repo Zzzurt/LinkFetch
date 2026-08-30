@@ -12,14 +12,24 @@ private val LightColors = lightColorScheme(
     onPrimary = Color.White,
     primaryContainer = Blue50,
     onPrimaryContainer = Blue700,
-    secondary = Blue500,
+    secondary = Slate600,
     onSecondary = Color.White,
-    background = Color.White,
-    onBackground = Color(0xFF111827),
+    secondaryContainer = Slate100,
+    onSecondaryContainer = Slate800,
+    tertiary = Blue500,
+    background = Slate50,
+    onBackground = Slate900,
     surface = Color.White,
-    onSurface = Color(0xFF111827),
-    surfaceVariant = Color(0xFFEEF2F7),
-    onSurfaceVariant = Color(0xFF4B5563),
+    onSurface = Slate900,
+    surfaceVariant = Slate100,
+    onSurfaceVariant = Slate600,
+    outline = Slate200,
+    outlineVariant = Slate100,
+    error = ErrorRed,
+    onError = Color.White,
+    errorContainer = ErrorContainerLight,
+    onErrorContainer = OnErrorContainerLight,
+    surfaceTint = Blue600,
 )
 
 private val DarkColors = darkColorScheme(
@@ -27,14 +37,24 @@ private val DarkColors = darkColorScheme(
     onPrimary = Color(0xFF0F172A),
     primaryContainer = Color(0xFF1E3A8A),
     onPrimaryContainer = Blue300,
-    secondary = Blue500,
-    onSecondary = Color.White,
+    secondary = Slate400,
+    onSecondary = Color(0xFF0F172A),
+    secondaryContainer = Slate700,
+    onSecondaryContainer = Slate200,
+    tertiary = Blue500,
     background = DarkBackground,
     onBackground = DarkOnSurface,
-    surface = DarkBackground,
+    surface = DarkSurface,
     onSurface = DarkOnSurface,
-    surfaceVariant = DarkSurface,
+    surfaceVariant = DarkSurfaceHigh,
     onSurfaceVariant = DarkOnSurfaceVariant,
+    outline = Slate700,
+    outlineVariant = Slate800,
+    error = ErrorRedDark,
+    onError = Color(0xFF0F172A),
+    errorContainer = ErrorContainerDark,
+    onErrorContainer = OnErrorContainerDark,
+    surfaceTint = Blue300,
 )
 
 @Composable
@@ -45,7 +65,7 @@ fun LinkFetchTheme(
     MaterialTheme(
         colorScheme = if (darkTheme) DarkColors else LightColors,
         typography = LinkFetchTypography,
+        shapes = LinkFetchShapes,
         content = content,
     )
 }
-

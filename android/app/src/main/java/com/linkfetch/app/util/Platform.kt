@@ -4,11 +4,13 @@ enum class Platform(
     val key: String,
     val label: String,
     val badgeColor: Long,
+    /** 深色模式下的强调色（降饱和/提亮，保证与文字对比度） */
+    val badgeColorDark: Long,
 ) {
-    XHS("xhs", "小红书", 0xFFFF2442),
-    DOUYIN("douyin", "抖音", 0xFF161823),
-    WEIBO("weibo", "微博", 0xFFE6162D),
-    X("x", "X", 0xFF0F1419);
+    XHS("xhs", "小红书", 0xFFFF2442, 0xFFE11D3D),
+    DOUYIN("douyin", "抖音", 0xFF161823, 0xFF3B4250),
+    WEIBO("weibo", "微博", 0xFFE6162D, 0xFFC4111F),
+    X("x", "X", 0xFF0F1419, 0xFF6B7280);
 
     companion object {
         fun fromKey(key: String?): Platform? = values().firstOrNull { it.key == key }

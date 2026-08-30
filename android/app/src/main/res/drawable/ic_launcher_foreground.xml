@@ -4,25 +4,8 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 菱形链环：绕中心旋转 45 度的圆角矩形描边，落在自适应图标安全区内 -->
-    <group
-        android:translateX="54"
-        android:translateY="54"
-        android:rotation="-45">
-        <path
-            android:pathData="M -9.3,-21.4 L 9.3,-21.4 A 14.4,14.4 0 0 1 23.7,-7.0 L 23.7,7.0 A 14.4,14.4 0 0 1 9.3,21.4 L -9.3,21.4 A 14.4,14.4 0 0 1 -23.7,7.0 L -23.7,-7.0 A 14.4,14.4 0 0 1 -9.3,-21.4 Z"
-            android:strokeColor="#FFFFFF"
-            android:strokeWidth="4.6"
-            android:strokeLineCap="round"
-            android:strokeLineJoin="round"
-            android:fillColor="#00000000" />
-    </group>
-    <!-- 居中下载箭头 -->
+    <!-- 前景透明：图形全部由 background 位图承载 -->
     <path
-        android:pathData="M 54,47.0 L 54,60.7 M 54,60.7 L 42.2,53.1 M 54,60.7 L 65.8,53.1"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="4.5"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
+        android:pathData="M0,0 H108 V108 H0 Z"
         android:fillColor="#00000000" />
 </vector>

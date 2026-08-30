@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Arrangement
@@ -26,12 +27,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -55,8 +59,13 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import coil.compose.AsyncImage
 import com.linkfetch.app.data.AppContainer
 import com.linkfetch.app.data.db.HistoryEntity
+import com.linkfetch.app.ui.components.EmptyState
 import com.linkfetch.app.ui.components.PlatformBadge
+import com.linkfetch.app.ui.components.ShimmerBox
 import com.linkfetch.app.ui.components.TypeTag
+import com.linkfetch.app.ui.theme.Radii
+import com.linkfetch.app.ui.theme.Spacing
+import com.linkfetch.app.ui.theme.platformAccent
 import com.linkfetch.app.util.Platform
 import com.linkfetch.app.util.formatHistoryTime
 
@@ -65,6 +74,7 @@ import com.linkfetch.app.util.formatHistoryTime
 fun HistoryScreen(
     container: AppContainer,
     onOpenResult: () -> Unit,
+    onGoHome: () -> Unit,
 ) {
     val context = LocalContext.current
     val viewModel: HistoryViewModel = viewModel(
@@ -81,6 +91,7 @@ fun HistoryScreen(
         },
     )
     val items by viewModel.items.collectAsStateWithLifecycle()
+    val isDark = isSystemInDarkTheme()
 
     LaunchedEffect(viewModel.message) {
         viewModel.message?.let {
@@ -93,7 +104,7 @@ fun HistoryScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = Spacing.screen, vertical = Spacing.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
@@ -123,8 +134,8 @@ fun HistoryScreen(
         FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = Spacing.screen),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
         ) {
             listOf(
                 "all" to "全部",
@@ -133,29 +144,47 @@ fun HistoryScreen(
                 "weibo" to "微博",
                 "x" to "X",
             ).forEach { (key, label) ->
+                val accent = if (key == "all") {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    platformAccent(Platform.fromKey(key)!!, isDark)
+                }
                 FilterChip(
                     selected = viewModel.filter == key,
                     onClick = { viewModel.onFilterChange(key) },
                     label = { Text(label) },
                     modifier = Modifier.padding(vertical = 4.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = accent,
+                        selectedLabelColor = Color.White,
+                    ),
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(Spacing.sm))
 
         val visible = viewModel.visibleItems
         if (visible.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text = if (items.isEmpty()) "暂无解析记录\n解析成功的内容会自动保存在这里" else "该平台暂无记录",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (items.isEmpty()) {
+                    EmptyState(
+                        title = "还没有下载记录",
+                        message = "解析成功的内容会自动保存在这里",
+                        actionText = "去解析",
+                        onAction = onGoHome,
+                    )
+                } else {
+                    EmptyState(
+                        title = "该平台暂无记录",
+                        message = "换个平台筛选试试",
+                        icon = Icons.Outlined.SearchOff,
+                    )
+                }
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 16.dp),
+                contentPadding = PaddingValues(start = Spacing.screen, end = Spacing.screen, bottom = Spacing.lg),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(visible, key = { it.id }) { entity ->
@@ -183,6 +212,7 @@ fun HistoryScreen(
     if (viewModel.confirmClear) {
         AlertDialog(
             onDismissRequest = { viewModel.handleClearConfirm(false) },
+            shape = MaterialTheme.shapes.large,
             title = { Text("清空历史记录？") },
             text = { Text("清空后无法恢复。") },
             confirmButton = {
@@ -201,6 +231,7 @@ fun HistoryScreen(
     if (viewModel.confirmDeleteSelected) {
         AlertDialog(
             onDismissRequest = { viewModel.handleDeleteSelected(false) },
+            shape = MaterialTheme.shapes.large,
             title = { Text("删除所选记录？") },
             text = { Text("将删除 ${viewModel.selectedIds.size} 条记录，删除后无法恢复。") },
             confirmButton = {
@@ -233,16 +264,18 @@ private fun HistoryCard(
         modifier = Modifier
             .fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongPress),
+        shape = Radii.card,
         colors = CardDefaults.cardColors(
             containerColor = if (selected) {
                 MaterialTheme.colorScheme.primaryContainer
             } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                MaterialTheme.colorScheme.surface
             },
         ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(Spacing.md),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (selectionMode) {
@@ -272,9 +305,13 @@ private fun HistoryCard(
             }
             Box(
                 modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(12.dp)),
             ) {
+                ShimmerBox(
+                    modifier = Modifier.fillMaxSize(),
+                    shape = RoundedCornerShape(12.dp),
+                )
                 if (entity.coverUrl != null) {
                     AsyncImage(
                         model = entity.coverUrl,
@@ -293,7 +330,7 @@ private fun HistoryCard(
                     }
                 }
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(Spacing.md))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -303,7 +340,7 @@ private fun HistoryCard(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(Spacing.sm))
                     TypeTag(entity.type)
                 }
                 Spacer(Modifier.height(4.dp))
@@ -345,4 +382,3 @@ private fun HistoryCard(
         }
     }
 }
-

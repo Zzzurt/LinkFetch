@@ -5,6 +5,9 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// 构建输出移出工作区（本机环境：工作区文件会被文件监视器独占锁定，导致构建产物无法删除）
+buildDir = file("D:/LinkFetchBuild/app")
+
 android {
     namespace = "com.linkfetch.app"
     compileSdk = 33
@@ -13,15 +16,30 @@ android {
         applicationId = "com.linkfetch.app"
         minSdk = 26
         targetSdk = 33
-        versionCode = 16
-        versionName = "1.6.4"
+        versionCode = 17
+        versionName = "1.6.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            // 发布版签名（与 debug 同 key，保证可安装；如有正式 keystore 可替换）
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    // 本机离线环境：跳过 release 的 lint 校验（需要联网下载 lint 依赖）
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
+    // Debug 签名：使用工作区内的 keystore（默认 ~/.android/debug.keystore 在该环境被文件监视器锁定）
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("../../.keystore/debug.keystore")
         }
     }
 

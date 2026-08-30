@@ -28,3 +28,6 @@ captures/
 # 系统
 .DS_Store
 Thumbs.db
+# 本机签名密钥与 agent 工作记录（不入库）
+.keystore/
+.workbuddy/

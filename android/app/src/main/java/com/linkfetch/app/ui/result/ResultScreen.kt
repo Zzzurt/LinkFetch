@@ -6,6 +6,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +20,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,7 +34,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -43,6 +46,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -55,8 +59,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,7 +78,10 @@ import com.linkfetch.app.data.model.ParseResponseDto
 import com.linkfetch.app.ui.components.ErrorCard
 import com.linkfetch.app.ui.components.LoadingButton
 import com.linkfetch.app.ui.components.PlatformBadge
+import com.linkfetch.app.ui.components.ShimmerBox
 import com.linkfetch.app.ui.components.TypeTag
+import com.linkfetch.app.ui.theme.Radii
+import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.util.Platform
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -91,6 +101,7 @@ fun ResultScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var previewIndex by remember { mutableStateOf<Int?>(null) }
     var liveChoiceIndex by remember { mutableStateOf<Int?>(null) }
+    val haptic = LocalHapticFeedback.current
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -102,6 +113,8 @@ fun ResultScreen(
         viewModel.message?.let { text ->
             val savedUri = viewModel.lastSavedUri
             val snackbarResult = if (savedUri != null) {
+                // 下载成功：轻震反馈
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                 snackbarHostState.showSnackbar(
                     message = text,
                     actionLabel = "查看",
@@ -128,6 +141,9 @@ fun ResultScreen(
         if (result == null) onBack()
     }
 
+    val downloadedCount = viewModel.itemStates.values.count { it is ItemState.Done }
+    val total = result?.medias?.size ?: 0
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -139,6 +155,29 @@ fun ResultScreen(
                 },
             )
         },
+        bottomBar = {
+            if (result != null) {
+                DownloadBottomBar(
+                    downloaded = downloadedCount,
+                    total = total,
+                    downloading = viewModel.downloading,
+                    failedCount = viewModel.failedCount,
+                    onDownloadAll = {
+                        if (Build.VERSION.SDK_INT >= 33 &&
+                            ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.POST_NOTIFICATIONS,
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            viewModel.downloadAll()
+                        }
+                    },
+                    onRetryFailed = viewModel::retryFailed,
+                )
+            }
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         result?.let { data ->
@@ -148,18 +187,6 @@ fun ResultScreen(
                 downloading = viewModel.downloading,
                 failedCount = viewModel.failedCount,
                 error = viewModel.error,
-                onDownloadAll = {
-                    if (Build.VERSION.SDK_INT >= 33 &&
-                        ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.POST_NOTIFICATIONS,
-                        ) != PackageManager.PERMISSION_GRANTED
-                    ) {
-                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    } else {
-                        viewModel.downloadAll()
-                    }
-                },
                 onRetryFailed = viewModel::retryFailed,
                 onDownloadOne = viewModel::downloadOne,
                 onLiveChoice = { liveChoiceIndex = it },
@@ -203,6 +230,72 @@ fun ResultScreen(
     }
 }
 
+/** 常驻底部操作条：进度 + 全部下载 */
+@Composable
+private fun DownloadBottomBar(
+    downloaded: Int,
+    total: Int,
+    downloading: Boolean,
+    failedCount: Int,
+    onDownloadAll: () -> Unit,
+    onRetryFailed: () -> Unit,
+) {
+    val fraction = if (total > 0) downloaded.toFloat() / total else 0f
+    Surface(
+        tonalElevation = 3.dp,
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "已下载 $downloaded / $total",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (downloaded == total && total > 0) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = fraction,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(Radii.pill),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                }
+                Spacer(Modifier.width(Spacing.lg))
+                LoadingButton(
+                    text = if (downloading) "下载中…" else "全部下载",
+                    loading = downloading,
+                    onClick = onDownloadAll,
+                    enabled = total > 0,
+                )
+            }
+            if (failedCount > 0) {
+                Spacer(Modifier.height(Spacing.xs))
+                TextButton(
+                    onClick = onRetryFailed,
+                    enabled = !downloading,
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Icon(
+                        Icons.Filled.ErrorOutline,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("重试失败（$failedCount）")
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun ResultContent(
     result: ParseResponseDto,
@@ -210,7 +303,6 @@ private fun ResultContent(
     downloading: Boolean,
     failedCount: Int,
     error: String?,
-    onDownloadAll: () -> Unit,
     onRetryFailed: () -> Unit,
     onDownloadOne: (Int) -> Unit,
     onLiveChoice: (Int) -> Unit,
@@ -221,7 +313,7 @@ private fun ResultContent(
     Column(
         modifier = modifier
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(Spacing.lg),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             platform?.let { PlatformBadge(it, size = 32) }
@@ -244,7 +336,7 @@ private fun ResultContent(
             }
             TypeTag(result.type)
         }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(Spacing.lg))
 
         result.videos.firstOrNull()?.let { video ->
             VideoPlayerView(
@@ -252,10 +344,11 @@ private fun ResultContent(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(9f / 16f)
-                    .clip(RoundedCornerShape(12.dp))
+                    .heightIn(max = 380.dp)
+                    .clip(Radii.card)
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(Spacing.lg))
         }
 
         if (result.images.isNotEmpty()) {
@@ -264,12 +357,12 @@ private fun ResultContent(
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(Spacing.sm))
             val startIndex = result.videos.size
             result.images.chunked(2).forEachIndexed { rowIndex, rowImages ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
                     rowImages.forEachIndexed { colIndex, image ->
                         val index = startIndex + rowIndex * 2 + colIndex
@@ -286,34 +379,28 @@ private fun ResultContent(
                     }
                     if (rowImages.size == 1) Spacer(Modifier.weight(1f))
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(Spacing.sm))
             }
         }
 
-        Spacer(Modifier.height(20.dp))
-        LoadingButton(
-            text = if (downloading) "下载中…" else "全部下载（${result.medias.size} 个）",
-            loading = downloading,
-            onClick = onDownloadAll,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Spacer(Modifier.height(Spacing.xl))
+        error?.let {
+            ErrorCard(it)
+            Spacer(Modifier.height(Spacing.md))
+        }
         if (failedCount > 0) {
-            Spacer(Modifier.height(8.dp))
             OutlinedButton(
                 onClick = onRetryFailed,
                 modifier = Modifier.fillMaxWidth(),
                 enabled = !downloading,
+                shape = MaterialTheme.shapes.extraLarge,
             ) {
                 Icon(Icons.Filled.ErrorOutline, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(Spacing.sm))
                 Text("重试失败（$failedCount）")
             }
+            Spacer(Modifier.height(Spacing.md))
         }
-        error?.let {
-            Spacer(Modifier.height(12.dp))
-            ErrorCard(it)
-        }
-        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -330,11 +417,19 @@ private fun MediaCard(
 ) {
     Card(
         modifier = modifier,
+        shape = Radii.card,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
         ),
     ) {
         Box {
+            // 图片加载前显示 shimmer 占位
+            ShimmerBox(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f),
+                shape = Radii.card,
+            )
             AsyncImage(
                 model = item.url,
                 contentDescription = null,
@@ -342,7 +437,7 @@ private fun MediaCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(Radii.card)
                     .clickable(onClick = onClick),
             )
             if (item.live) {
@@ -350,9 +445,9 @@ private fun MediaCard(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(6.dp)
-                        .clip(RoundedCornerShape(4.dp))
+                        .clip(Radii.pill)
                         .background(MaterialTheme.colorScheme.primary)
-                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
                 ) {
                     Text(
                         text = "Live",
@@ -370,12 +465,29 @@ private fun MediaCard(
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
                             .height(4.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                     )
                 }
                 ItemState.Done -> {
+                    // 下载成功：对勾弹性放大入场（稳定 API，替代 AnimatedVisibility + scaleIn）
+                    val scale = remember { Animatable(0.4f) }
+                    LaunchedEffect(Unit) {
+                        scale.animateTo(
+                            targetValue = 1f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium,
+                            ),
+                        )
+                    }
+                    val scaleModifier = Modifier.graphicsLayer {
+                        scaleX = scale.value
+                        scaleY = scale.value
+                    }
                     if (item.live) {
                         Box(
-                            modifier = Modifier
+                            modifier = scaleModifier
                                 .align(Alignment.BottomEnd)
                                 .padding(8.dp)
                                 .size(26.dp)
@@ -395,7 +507,7 @@ private fun MediaCard(
                             Icons.Filled.CheckCircle,
                             contentDescription = "已下载",
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
+                            modifier = scaleModifier
                                 .align(Alignment.BottomEnd)
                                 .padding(8.dp)
                                 .size(22.dp),
@@ -461,6 +573,7 @@ private fun LiveChoiceDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+            shape = MaterialTheme.shapes.large,
         title = { Text(if (failed) "Live 图下载失败" else "选择下载方式") },
         text = {
             Column {
