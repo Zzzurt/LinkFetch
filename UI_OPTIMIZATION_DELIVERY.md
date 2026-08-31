@@ -5,14 +5,25 @@
 
 ## 交付物
 
+### Release 最新版（v1.6.7 / versionCode 19）
+
+| 物 | 路径 |
+| --- | --- |
+| **GitHub Release** | https://github.com/Zzzurt/LinkFetch/releases/tag/v1.6.7 |
+| Release APK 附件 | `LinkFetch-v1.6.7.apk`（13,399,924 B，已上传，sha256 `5264ba27...`） |
+| 本地发布包 | `LinkFetch-v1.6.7.apk`（项目根目录，不入库） |
+| Release 构建日志 | 本机构建输出目录（由 `-Plinkfetch.buildDir` 指定，不入库） |
+
+v1.6.7 内容：单条历史记录删除增加确认弹窗（防误删）。aapt 校验 `versionCode=19 versionName=1.6.7`，`assembleRelease` 构建通过（1m15s），提交 `feb2ebc` 已推送 main。
+
 ### Release 版（v1.6.6 / versionCode 18）
 
 | 物 | 路径 |
 | --- | --- |
-| **Release APK（正式分发包）** | `D:\Codex\agent-project\LinkFetch\LinkFetch-v1.6.6.apk`（13,398,448 B，已复制到项目根目录） |
-| Release 构建产物原件 | `D:\LinkFetchBuild\app\outputs\apk\release\app-release.apk` |
-| Release 构建日志 | `D:\LinkFetchBuild\release_out.log` / `release_err.log` |
-| Release 冒烟截图（模拟器安装运行） | `D:\LinkFetchBuild\emu\shot_release_home.png` |
+| **Release APK（正式分发包）** | `LinkFetch-v1.6.6.apk`（13,398,448 B，项目根目录） |
+| Release 构建产物原件 | 构建输出目录 `app/outputs/apk/release/app-release.apk`（不入库） |
+| Release 构建日志 | 本机构建输出目录（不入库） |
+| Release 冒烟截图（模拟器安装运行） | 本机构建输出目录（不入库） |
 
 Release 校验：
 - `aapt dump badging`：`package com.linkfetch.app versionCode=18 versionName=1.6.6 minSdk=26 targetSdk=33`
@@ -23,9 +34,9 @@ Release 校验：
 
 | 物 | 路径 |
 | --- | --- |
-| APK（debug，19,241,241 B） | `D:\LinkFetchBuild\app\outputs\apk\debug\app-debug.apk` |
-| 构建日志 | `D:\LinkFetchBuild\build_out.log` / `build_err.log` |
-| 真机截图（6 张，已人工复核） | `D:\LinkFetchBuild\emu\shot_*.png` |
+| APK（debug，19,241,241 B） | 构建输出目录 `app/outputs/apk/debug/app-debug.apk`（不入库） |
+| 构建日志 | 本机构建输出目录（不入库） |
+| 真机截图（6 张，已人工复核） | 本机构建输出目录（不入库） |
 
 ## 改动清单（9 个文件）
 

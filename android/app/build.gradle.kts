@@ -5,8 +5,11 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-// 构建输出移出工作区（本机环境：工作区文件会被文件监视器独占锁定，导致构建产物无法删除）
-buildDir = file("D:/LinkFetchBuild/app")
+// 构建输出目录：默认使用系统临时目录，避免在仓库中写死本机路径；
+// 需要固定输出位置时用 -Plinkfetch.buildDir=<绝对路径> 覆盖
+val linkfetchBuildDir: String = (project.findProperty("linkfetch.buildDir") as String?)
+    ?: (System.getProperty("java.io.tmpdir") + "/LinkFetchBuild/app")
+buildDir = file(linkfetchBuildDir)
 
 android {
     namespace = "com.linkfetch.app"

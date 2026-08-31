@@ -11,7 +11,7 @@ Android 应用：粘贴或自动识别**某书 / 某音 / 某博 / 某推**链�
 ## 项目结构
 
 ```
-agent-project/
+LinkFetch/
 ├── backend/                 # Python 解析后端（FastAPI，可选备用模式）
 │   ├── app/
 │   │   ├── main.py          # API 入口：/api/parse、/api/health
