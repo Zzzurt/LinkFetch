@@ -31,3 +31,6 @@ Thumbs.db
 # 本机签名密钥与 agent 工作记录（不入库）
 .keystore/
 .workbuddy/
+
+# 内部交付记录（仅本地，不公开）
+UI_OPTIMIZATION_DELIVERY.md
