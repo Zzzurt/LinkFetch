@@ -9,9 +9,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -23,6 +27,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -40,9 +46,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -56,11 +64,14 @@ import com.linkfetch.app.ui.components.LoadingButton
 import com.linkfetch.app.ui.components.PlatformBadge
 import com.linkfetch.app.ui.components.ShimmerBox
 import com.linkfetch.app.ui.components.VerticalSpace
+import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
+import com.linkfetch.app.ui.theme.platformAccent
 import com.linkfetch.app.util.Platform
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(
     container: AppContainer,
@@ -117,22 +128,37 @@ fun HomeScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = Spacing.screen, vertical = Spacing.lg),
     ) {
-        // 品牌头部
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            BrandMark(size = 44.dp)
-            Spacer(Modifier.width(Spacing.md))
-            Column {
-                Text(
-                    text = "链取",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+        // 品牌头部：渐变 Hero 底，收拢页面顶部视觉
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(Radii.large)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            MaterialTheme.colorScheme.primaryContainer,
+                            MaterialTheme.colorScheme.background,
+                        ),
+                    ),
                 )
-                Text(
-                    text = "一键提取无水印图片和视频",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                .padding(Spacing.lg),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BrandMark(size = 44.dp)
+                Spacer(Modifier.width(Spacing.md))
+                Column {
+                    Text(
+                        text = "链取",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = "一键提取无水印图片和视频",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
         VerticalSpace(16)
@@ -170,16 +196,26 @@ fun HomeScreen(
         ) {
             val url = viewModel.clipboardUrl ?: return@AnimatedVisibility
             val platform = Platform.fromUrl(url)
+            val isDark = isSystemInDarkTheme()
             Column {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(MaterialTheme.shapes.extraLarge)
                         .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                        .padding(start = Spacing.md, end = Spacing.xs, top = Spacing.sm, bottom = Spacing.sm),
+                        .clickable(onClick = viewModel::useClipboardUrl)
+                        .padding(start = Spacing.sm, end = Spacing.xs, top = Spacing.sm, bottom = Spacing.sm),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     if (platform != null) {
+                        Box(
+                            modifier = Modifier
+                                .width(4.dp)
+                                .height(36.dp)
+                                .clip(Radii.pill)
+                                .background(platformAccent(platform, isDark)),
+                        )
+                        Spacer(Modifier.width(Spacing.sm))
                         PlatformBadge(platform, size = 28)
                         Spacer(Modifier.width(Spacing.sm))
                     } else {
@@ -194,6 +230,9 @@ fun HomeScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                         )
+                    }
+                    TextButton(onClick = viewModel::useClipboardUrl) {
+                        Text("去解析")
                     }
                     IconButton(onClick = viewModel::dismissClipboard) {
                         Icon(Icons.Filled.Close, contentDescription = "忽略")
@@ -214,20 +253,43 @@ fun HomeScreen(
                 placeholder = { Text("粘贴链接或整段分享文案") },
                 minLines = 2,
                 maxLines = 4,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                keyboardActions = KeyboardActions(
+                    onGo = { if (viewModel.input.isNotBlank()) viewModel.parse() },
+                ),
                 trailingIcon = {
                     if (viewModel.input.isNotEmpty()) {
                         IconButton(onClick = viewModel::clearInput) {
                             Icon(Icons.Filled.Close, contentDescription = "清除")
+                        }
+                    } else {
+                        IconButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(ClipboardManager::class.java)
+                                val text = clipboard?.primaryClip
+                                    ?.takeIf { it.itemCount > 0 }
+                                    ?.getItemAt(0)
+                                    ?.coerceToText(context)
+                                    ?.toString()
+                                if (!text.isNullOrBlank()) viewModel.onInputChange(text.trim())
+                            },
+                        ) {
+                            Icon(
+                                Icons.Filled.ContentPaste,
+                                contentDescription = "从剪贴板粘贴",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 },
             )
             VerticalSpace(12)
             LoadingButton(
-                text = if (viewModel.parsing) "解析中…" else "解析并下载",
+                text = if (viewModel.parsing) "解析中…" else "解析并保存",
                 loading = viewModel.parsing,
                 onClick = viewModel::parse,
                 modifier = Modifier.fillMaxWidth(),
+                enabled = viewModel.input.isNotBlank(),
             )
         }
 
@@ -286,7 +348,10 @@ fun HomeScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         VerticalSpace(8)
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             Platform.values().forEach { platform ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     PlatformBadge(platform, size = 24)

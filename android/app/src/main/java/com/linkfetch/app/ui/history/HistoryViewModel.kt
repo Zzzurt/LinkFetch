@@ -70,6 +70,16 @@ class HistoryViewModel(
         selectedIds = emptySet()
     }
 
+    /** 全选/取消全选当前筛选可见项（供多选底部操作条使用） */
+    fun selectAllOrClear() {
+        val visibleIds = visibleItems.map { it.id }
+        if (visibleIds.isNotEmpty() && selectedIds.containsAll(visibleIds)) {
+            clearSelection()
+        } else {
+            selectedIds = visibleIds.toSet()
+        }
+    }
+
     fun requestDeleteSelected() {
         if (selectedIds.isNotEmpty()) confirmDeleteSelected = true
     }

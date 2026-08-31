@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
@@ -39,6 +40,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -49,6 +51,7 @@ import com.linkfetch.app.ui.theme.Blue500
 import com.linkfetch.app.ui.theme.Blue600
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
+import com.linkfetch.app.ui.theme.platformAccent
 import com.linkfetch.app.util.Platform
 
 // ---------- 品牌 ----------
@@ -80,10 +83,14 @@ fun PlatformBadge(
     modifier: Modifier = Modifier,
     size: Int = 28,
 ) {
+    val accent = platformAccent(platform, isSystemInDarkTheme())
     Box(
         modifier = modifier
             .size(size.dp)
-            .background(Color(platform.badgeColor), CircleShape),
+            .background(
+                Brush.linearGradient(listOf(lerp(accent, Color.White, 0.14f), accent)),
+                CircleShape,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -303,6 +310,7 @@ fun EmptyState(
 
 // ---------- 通用分组卡片 ----------
 
+/** 通用分组卡片：浅色依赖柔和阴影，深色靠描边分层 */
 @Composable
 fun GroupCard(
     modifier: Modifier = Modifier,
@@ -314,6 +322,11 @@ fun GroupCard(
         shape = Radii.card,
         colors = CardDefaults.cardColors(containerColor = containerColor),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = if (isSystemInDarkTheme()) {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        } else {
+            null
+        },
     ) {
         Column(modifier = Modifier.padding(Spacing.lg), content = content)
     }

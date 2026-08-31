@@ -1,6 +1,7 @@
 package com.linkfetch.app.ui.history
 
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -38,14 +39,17 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -68,6 +72,9 @@ import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.platformAccent
 import com.linkfetch.app.util.Platform
 import com.linkfetch.app.util.formatHistoryTime
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -114,13 +121,6 @@ fun HistoryScreen(
                 fontWeight = FontWeight.Bold,
             )
             if (viewModel.selectionMode) {
-                IconButton(onClick = viewModel::requestDeleteSelected) {
-                    Icon(
-                        Icons.Filled.Delete,
-                        contentDescription = "删除所选",
-                        tint = MaterialTheme.colorScheme.error,
-                    )
-                }
                 TextButton(onClick = viewModel::clearSelection) {
                     Text("取消")
                 }
@@ -164,8 +164,14 @@ fun HistoryScreen(
         Spacer(Modifier.height(Spacing.sm))
 
         val visible = viewModel.visibleItems
+        val allSelected = visible.isNotEmpty() && visible.all { it.id in viewModel.selectedIds }
         if (visible.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
                 if (items.isEmpty()) {
                     EmptyState(
                         title = "还没有下载记录",
@@ -182,28 +188,77 @@ fun HistoryScreen(
                 }
             }
         } else {
+            val grouped = remember(visible) { groupByDay(visible) }
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
                 contentPadding = PaddingValues(start = Spacing.screen, end = Spacing.screen, bottom = Spacing.lg),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(visible, key = { it.id }) { entity ->
-                    HistoryCard(
-                        entity = entity,
-                        selectionMode = viewModel.selectionMode,
-                        selected = entity.id in viewModel.selectedIds,
-                        reParsing = viewModel.reParsingId == entity.id,
-                        onClick = {
-                            if (viewModel.selectionMode) {
-                                viewModel.toggleSelect(entity.id)
-                            } else if (viewModel.open(entity)) {
-                                onOpenResult()
-                            }
-                        },
-                        onLongPress = { viewModel.longPress(entity.id) },
-                        onReparse = { viewModel.reparse(entity) },
-                        onDelete = { viewModel.delete(entity) },
+                grouped.forEach { (label, group) ->
+                    item(key = "header-$label") {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
+                        )
+                    }
+                    items(group, key = { it.id }) { entity ->
+                        HistoryCard(
+                            entity = entity,
+                            selectionMode = viewModel.selectionMode,
+                            selected = entity.id in viewModel.selectedIds,
+                            reParsing = viewModel.reParsingId == entity.id,
+                            onClick = {
+                                if (viewModel.selectionMode) {
+                                    viewModel.toggleSelect(entity.id)
+                                } else if (viewModel.open(entity)) {
+                                    onOpenResult()
+                                }
+                            },
+                            onLongPress = { viewModel.longPress(entity.id) },
+                            onReparse = { viewModel.reparse(entity) },
+                            onDelete = { viewModel.delete(entity) },
+                        )
+                    }
+                }
+            }
+        }
+
+        // 多选模式：底部操作条（全选 / 删除），拇指可达
+        if (viewModel.selectionMode) {
+            Surface(
+                tonalElevation = 3.dp,
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.screen, vertical = Spacing.xs),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = viewModel::selectAllOrClear) {
+                        Text(if (allSelected) "取消全选" else "全选")
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = "已选 ${viewModel.selectedIds.size} 项",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Spacer(Modifier.width(Spacing.md))
+                    TextButton(onClick = viewModel::requestDeleteSelected) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("删除", color = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
         }
@@ -248,6 +303,25 @@ fun HistoryScreen(
     }
 }
 
+/** 按日期分组：今天 / 昨天 / M月d日，组内保持时间倒序 */
+private fun groupByDay(items: List<HistoryEntity>): List<Pair<String, List<HistoryEntity>>> {
+    val today = LocalDate.now()
+    return items
+        .groupBy { item ->
+            Instant.ofEpochMilli(item.createdAt).atZone(ZoneId.systemDefault()).toLocalDate()
+        }
+        .entries
+        .sortedByDescending { it.key }
+        .map { (date, list) ->
+            val label = when (date) {
+                today -> "今天"
+                today.minusDays(1) -> "昨天"
+                else -> "${date.monthValue}月${date.dayOfMonth}日"
+            }
+            label to list
+        }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HistoryCard(
@@ -273,6 +347,11 @@ private fun HistoryCard(
             },
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        border = if (isSystemInDarkTheme()) {
+            BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        } else {
+            null
+        },
     ) {
         Row(
             modifier = Modifier.padding(Spacing.md),
@@ -320,11 +399,21 @@ private fun HistoryCard(
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
+                    // 无封面：平台色渐变底 + 徽标，替代灰底平铺
+                    val platform = Platform.fromKey(entity.platform)
+                    val accent = platform?.let { platformAccent(it, isSystemInDarkTheme()) }
+                        ?: MaterialTheme.colorScheme.surfaceVariant
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.linearGradient(
+                                    listOf(accent.copy(alpha = 0.28f), accent.copy(alpha = 0.08f)),
+                                ),
+                            ),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Platform.fromKey(entity.platform)?.let {
+                        platform?.let {
                             PlatformBadge(it, size = 26)
                         }
                     }
@@ -348,7 +437,7 @@ private fun HistoryCard(
                     text = buildString {
                         Platform.fromKey(entity.platform)?.let { append(it.label).append(" · ") }
                         append(formatHistoryTime(entity.createdAt))
-                        if (entity.downloadedCount > 0) append(" · 已下载 ${entity.downloadedCount}")
+                        if (entity.downloadedCount > 0) append(" · 已保存 ${entity.downloadedCount}")
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

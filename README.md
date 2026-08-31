@@ -1,6 +1,6 @@
 # 链取（LinkFetch）
 
-**当前版本：v1.6.4（versionCode 16）**
+**当前版本：v1.6.6（versionCode 18）**
 
 Android 应用：粘贴或自动识别**某书 / 某音 / 某博 / 某推**链接，一键提取**无水印**图片和视频并保存到相册。
 
@@ -90,5 +90,6 @@ cd android && $env:LINKFETCH_REAL_TEST='1'; .\gradlew.bat :app:testDebugUnitTest
 - **v1 仅单链接解析**：批量解析（多行链接）留作 v2 扩展。
 
 ## 更新记录
+- **v1.6.6**：UI 优化——首页品牌渐变区、剪贴板横幅可点击、空态粘贴按钮与键盘回车解析；设置页分区图标与下载质量占位禁用；结果页视频封面遮罩、图片奇数布局、下载进度环与底部条完成态；历史页日期分组、多选底部操作条与平台色封面。
 - **v1.6.x**：新增 Live 图（实况 / 动态照片）支持，某书 / 某音 / 某博 的实况图可合成为 Motion Photo 保存（[MotionPhotoWriter](android/app/src/main/java/com/linkfetch/app/data/download/MotionPhotoWriter.kt)）；某推 长视频支持 HLS / VMAP 解析与 vxtwitter / fxtwitter 回退；历史记录支持平台筛选与多选删除。
 - **v1.5.0**：新增 某推 平台解析，支持图片原图与最高画质视频；历史记录新增 某推 筛选。

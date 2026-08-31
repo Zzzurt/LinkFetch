@@ -82,6 +82,7 @@ import com.linkfetch.app.ui.components.ShimmerBox
 import com.linkfetch.app.ui.components.TypeTag
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
+import com.linkfetch.app.ui.theme.TabularNums
 import com.linkfetch.app.util.Platform
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -241,6 +242,7 @@ private fun DownloadBottomBar(
     onRetryFailed: () -> Unit,
 ) {
     val fraction = if (total > 0) downloaded.toFloat() / total else 0f
+    val allDone = total > 0 && downloaded == total
     Surface(
         tonalElevation = 3.dp,
         color = MaterialTheme.colorScheme.surface,
@@ -248,15 +250,26 @@ private fun DownloadBottomBar(
         Column(modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.md)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "已下载 $downloaded / $total",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = if (downloaded == total && total > 0) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (allDone) {
+                            Icon(
+                                Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                        }
+                        Text(
+                            text = if (allDone) "已全部保存到相册" else "已保存 $downloaded / $total",
+                            style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = TabularNums),
+                            color = if (allDone) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
                     Spacer(Modifier.height(6.dp))
                     LinearProgressIndicator(
                         progress = fraction,
@@ -270,10 +283,14 @@ private fun DownloadBottomBar(
                 }
                 Spacer(Modifier.width(Spacing.lg))
                 LoadingButton(
-                    text = if (downloading) "下载中…" else "全部下载",
+                    text = when {
+                        downloading -> "保存中…"
+                        allDone -> "已全部保存"
+                        else -> "全部保存"
+                    },
                     loading = downloading,
                     onClick = onDownloadAll,
-                    enabled = total > 0,
+                    enabled = total > 0 && !allDone,
                 )
             }
             if (failedCount > 0) {
@@ -339,15 +356,20 @@ private fun ResultContent(
         Spacer(Modifier.height(Spacing.lg))
 
         result.videos.firstOrNull()?.let { video ->
-            VideoPlayerView(
-                url = video.url,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(9f / 16f)
-                    .heightIn(max = 380.dp)
-                    .clip(Radii.card)
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-            )
+            // 竖屏视频等比缩放并居中，避免 9:16 与限高冲突导致偏离
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                VideoPlayerView(
+                    url = video.url,
+                    modifier = Modifier
+                        .aspectRatio(9f / 16f)
+                        .heightIn(max = 380.dp)
+                        .clip(Radii.card)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                )
+            }
             Spacer(Modifier.height(Spacing.lg))
         }
 
@@ -360,6 +382,7 @@ private fun ResultContent(
             Spacer(Modifier.height(Spacing.sm))
             val startIndex = result.videos.size
             result.images.chunked(2).forEachIndexed { rowIndex, rowImages ->
+                val lastOdd = rowImages.size == 1
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -374,10 +397,18 @@ private fun ResultContent(
                             onDownload = { onDownloadOne(index) },
                             onLiveChoice = { onLiveChoice(index) },
                             onClick = { onPreview(index - startIndex) },
-                            modifier = Modifier.weight(1f),
+                            // 奇数图：最后一张通栏 16:9，打破全 1:1 方块的单调
+                            modifier = if (lastOdd) {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(16f / 9f)
+                            } else {
+                                Modifier
+                                    .weight(1f)
+                                    .aspectRatio(1f)
+                            },
                         )
                     }
-                    if (rowImages.size == 1) Spacer(Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(Spacing.sm))
             }
@@ -423,11 +454,9 @@ private fun MediaCard(
         ),
     ) {
         Box {
-            // 图片加载前显示 shimmer 占位
+            // 图片加载前显示 shimmer 占位（尺寸由调用方 modifier 决定）
             ShimmerBox(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f),
+                modifier = Modifier.fillMaxSize(),
                 shape = Radii.card,
             )
             AsyncImage(
@@ -435,8 +464,7 @@ private fun MediaCard(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
+                    .fillMaxSize()
                     .clip(Radii.card)
                     .clickable(onClick = onClick),
             )
@@ -459,18 +487,33 @@ private fun MediaCard(
             }
             when (state) {
                 is ItemState.Downloading -> {
-                    LinearProgressIndicator(
-                        progress = state.progress,
+                    // 下载中：胶囊内进度环
+                    Box(
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(4.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    )
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(17.dp))
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            progress = state.progress,
+                            modifier = Modifier.fillMaxSize(),
+                            strokeWidth = 2.5.dp,
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        )
+                        Icon(
+                            Icons.Filled.Download,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(14.dp),
+                        )
+                    }
                 }
                 ItemState.Done -> {
-                    // 下载成功：对勾弹性放大入场（稳定 API，替代 AnimatedVisibility + scaleIn）
+                    // 保存成功：对勾弹性放大入场（稳定 API，替代 AnimatedVisibility + scaleIn）
                     val scale = remember { Animatable(0.4f) }
                     LaunchedEffect(Unit) {
                         scale.animateTo(
@@ -485,6 +528,20 @@ private fun MediaCard(
                         scaleX = scale.value
                         scaleY = scale.value
                     }
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(8.dp)
+                            .clip(Radii.pill)
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f))
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    ) {
+                        Text(
+                            text = "已保存",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
                     if (item.live) {
                         Box(
                             modifier = scaleModifier
@@ -497,7 +554,7 @@ private fun MediaCard(
                         ) {
                             Icon(
                                 Icons.Filled.CheckCircle,
-                                contentDescription = "已下载 Live 图，点击可再下载静态图",
+                                contentDescription = "已保存 Live 图，点击可再保存静态图",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(22.dp),
                             )
@@ -505,7 +562,7 @@ private fun MediaCard(
                     } else {
                         Icon(
                             Icons.Filled.CheckCircle,
-                            contentDescription = "已下载",
+                            contentDescription = "已保存",
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = scaleModifier
                                 .align(Alignment.BottomEnd)
@@ -530,7 +587,7 @@ private fun MediaCard(
                     ) {
                         Icon(
                             Icons.Filled.Close,
-                            contentDescription = if (item.live) "Live 图下载失败，点击选择方式" else "下载失败，点击重试",
+                            contentDescription = if (item.live) "Live 图保存失败，点击选择方式" else "保存失败，点击重试",
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.onError,
                         )
@@ -552,7 +609,7 @@ private fun MediaCard(
                     ) {
                         Icon(
                             Icons.Filled.Download,
-                            contentDescription = if (item.live) "下载第 ${index + 1} 张（Live 图）" else "下载第 ${index + 1} 张",
+                            contentDescription = if (item.live) "保存第 ${index + 1} 张（Live 图）" else "保存第 ${index + 1} 张",
                             modifier = Modifier.size(18.dp),
                             tint = MaterialTheme.colorScheme.primary,
                         )
@@ -574,7 +631,7 @@ private fun LiveChoiceDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
             shape = MaterialTheme.shapes.large,
-        title = { Text(if (failed) "Live 图下载失败" else "选择下载方式") },
+        title = { Text(if (failed) "Live 图保存失败" else "选择保存方式") },
         text = {
             Column {
                 Text(
@@ -596,12 +653,12 @@ private fun LiveChoiceDialog(
         },
         confirmButton = {
             TextButton(onClick = onLive) {
-                Text(if (failed) "重试 Live 图" else "下载 Live 图")
+                Text(if (failed) "重试保存 Live 图" else "保存 Live 图")
             }
         },
         dismissButton = {
             TextButton(onClick = onStatic) {
-                Text(if (failed) "仅保存静态图" else "下载静态图")
+                Text(if (failed) "仅保存静态图" else "保存静态图")
             }
         },
     )
