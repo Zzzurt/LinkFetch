@@ -45,7 +45,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -99,6 +101,8 @@ fun HistoryScreen(
     )
     val items by viewModel.items.collectAsStateWithLifecycle()
     val isDark = isSystemInDarkTheme()
+    // 单条删除确认（与批量删除一致，防误删）
+    var confirmDelete by remember { mutableStateOf<HistoryEntity?>(null) }
 
     LaunchedEffect(viewModel.message) {
         viewModel.message?.let {
@@ -220,7 +224,7 @@ fun HistoryScreen(
                             },
                             onLongPress = { viewModel.longPress(entity.id) },
                             onReparse = { viewModel.reparse(entity) },
-                            onDelete = { viewModel.delete(entity) },
+                            onDelete = { confirmDelete = entity },
                         )
                     }
                 }
@@ -296,6 +300,36 @@ fun HistoryScreen(
             },
             dismissButton = {
                 TextButton(onClick = { viewModel.handleDeleteSelected(false) }) {
+                    Text("取消")
+                }
+            },
+        )
+    }
+
+    confirmDelete?.let { entity ->
+        AlertDialog(
+            onDismissRequest = { confirmDelete = null },
+            shape = MaterialTheme.shapes.large,
+            title = { Text("删除这条记录？") },
+            text = {
+                Text(
+                    text = "「${entity.title}」删除后无法恢复。",
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = null
+                        viewModel.delete(entity)
+                    },
+                ) {
+                    Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDelete = null }) {
                     Text("取消")
                 }
             },
