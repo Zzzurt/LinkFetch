@@ -23,6 +23,9 @@ class DouyinParser(
     private val pcDetailApi: String = "https://www.douyin.com/aweme/v1/web/aweme/detail/",
     private val notePageUrl: String = "https://www.douyin.com/note/%s",
     private val noteShareUrl: String = "https://m.douyin.com/share/note/%s/",
+    private val videoPageUrl: String = "https://www.douyin.com/video/%s",
+    /** WebView 兜底：加载桌面版详情页并返回 aweme JSON（camelCase 结构）；JVM 单测传 null 跳过。 */
+    private val webViewPageFetcher: (suspend (pageUrl: String) -> String?)? = null,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -129,6 +132,28 @@ class DouyinParser(
         if (itemInfo != null) {
             return@withContext buildResponse(itemInfo)
         }
+
+        // 最终兜底：WebView 加载桌面版详情页（分享页与全部直连接口被风控时）。
+        // WebView 是真浏览器引擎，可自动通过 __ac_nonce JS 挑战拿到 ttwid，
+        // 页面 SSR 的 __pace_f RSC 流中包含作品数据（camelCase 结构）。
+        if (webViewPageFetcher != null) {
+            val pageUrl = if (kind == "video") {
+                videoPageUrl.format(contentId)
+            } else {
+                notePageUrl.format(contentId)
+            }
+            val awemeJson = runCatching { webViewPageFetcher?.invoke(pageUrl) }.getOrNull()
+            if (!awemeJson.isNullOrBlank()) {
+                val root = runCatching { json.parseToJsonElement(awemeJson) as? JsonObject }.getOrNull()
+                // 兼容两种结构：完整 aweme 包装（{"statusCode":..,"detail":{..}}）或直接就是 detail 对象
+                val detail = root?.get("detail")?.jsonObjectOrNull() ?: root
+                val looksLikeDetail = detail != null &&
+                    (detail["images"] is JsonArray || detail["video"]?.jsonObjectOrNull() != null)
+                if (looksLikeDetail) {
+                    return@withContext buildResponseFromDetail(detail!!)
+                }
+            }
+        }
         throw lastError ?: LocalParseException("parse_failed", "抖音解析失败，作品可能已删除")
     }
 
@@ -209,6 +234,87 @@ class DouyinParser(
                 },
             )
         }
+    }
+
+    /**
+     * 解析桌面版详情页 SSR 数据（__pace_f RSC 流，camelCase 结构）。
+     * 字段：desc / itemTitle、authorInfo.nickname、images[].urlList、video.playAddr[].src。
+     * 图文/图集（isSlides）场景下顶层的 video 字段是图集附属内容而非作品本身，跳过以免混入无效视频。
+     */
+    private fun buildResponseFromDetail(detail: JsonObject): ParseResponseDto {
+        val desc = detail["desc"]?.stringOrNull().orEmpty()
+            .ifBlank { detail["itemTitle"]?.stringOrNull().orEmpty() }
+            .ifBlank { "抖音作品" }
+        val author = detail["authorInfo"]?.jsonObjectOrNull()?.get("nickname")?.stringOrNull()
+        val medias = mutableListOf<MediaItemDto>()
+
+        (detail["images"] as? JsonArray)?.forEach { element ->
+            val image = element.jsonObjectOrNull() ?: return@forEach
+            val urls = (image["urlList"] as? JsonArray)
+                ?.mapNotNull { it.stringOrNull() }
+                ?.filter { it.startsWith("http") }
+                .orEmpty()
+            if (urls.isEmpty()) return@forEach
+            // urlList 内同时有 webp 与 jpeg 变体，优先取非 webp 的原始格式
+            val best = urls.firstOrNull { !it.contains(".webp", ignoreCase = true) } ?: urls.first()
+            val liveUrl = pickLivePhotoUrlCamel(image)
+            medias += MediaItemDto(
+                kind = "image",
+                url = best,
+                quality = "original",
+                live = !liveUrl.isNullOrBlank(),
+                liveUrl = liveUrl,
+            )
+        }
+
+        if (medias.none { !it.isVideo }) {
+            // 无图片（纯视频作品）时才取顶层 video；图集场景见方法注释
+            val video = detail["video"]?.jsonObjectOrNull()
+            val playSrc = (video?.get("playAddr") as? JsonArray)
+                ?.mapNotNull { it.jsonObjectOrNull()?.get("src")?.stringOrNull() }
+                ?.firstOrNull { it.startsWith("http") }
+            val videoUrl = playSrc
+                ?: video?.get("uri")?.stringOrNull()?.takeIf { it.startsWith("http") }
+            if (!videoUrl.isNullOrBlank()) {
+                val cover = (video?.get("cover")?.jsonObjectOrNull()?.get("urlList") as? JsonArray)
+                    ?.firstOrNull()?.stringOrNull()
+                medias.add(
+                    0,
+                    MediaItemDto(
+                        kind = "video",
+                        url = videoUrl,
+                        cover = cover,
+                        quality = video?.get("ratio")?.stringOrNull() ?: "hd",
+                    ),
+                )
+            }
+        }
+        if (medias.isEmpty()) {
+            throw LocalParseException("parse_failed", "该作品不包含图片或视频")
+        }
+        val hasVideo = medias.any { it.isVideo }
+        val hasImage = medias.any { !it.isVideo }
+        return ParseResponseDto(
+            platform = "douyin",
+            title = desc,
+            author = author,
+            type = when {
+                hasVideo && hasImage -> "mixed"
+                hasVideo -> "video"
+                else -> "image"
+            },
+            medias = medias,
+        )
+    }
+
+    /** 桌面版 SSR 数据中的图集实况图：images[].video.playAddr[].src。 */
+    private fun pickLivePhotoUrlCamel(image: JsonObject): String? {
+        val video = image["video"]?.jsonObjectOrNull() ?: return null
+        val playAddr = video["playAddr"] as? JsonArray ?: return null
+        return playAddr
+            .mapNotNull { it.jsonObjectOrNull()?.get("src")?.stringOrNull() }
+            .firstOrNull { it.startsWith("http") }
+            ?: video["uri"]?.stringOrNull()?.takeIf { it.startsWith("http") }
     }
 
     private fun spiderHeaders(cookie: String?): Headers {

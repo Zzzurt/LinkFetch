@@ -9,6 +9,8 @@ import java.io.IOException
  */
 class LocalParseClient(
     private val cookieProvider: (Platform) -> String?,
+    /** 抖音 WebView 兜底提取（真机可用；JVM 单测不传则跳过该路径）。 */
+    private val douyinWebViewFallback: (suspend (pageUrl: String, cookie: String?) -> String?)? = null,
 ) {
     suspend fun parse(url: String): ParseResponseDto {
         val platform = Platform.fromUrl(url)
@@ -17,7 +19,9 @@ class LocalParseClient(
             val cookie = cookieProvider(platform)
             when (platform) {
                 Platform.XHS -> XhsParser().parse(url, cookie)
-                Platform.DOUYIN -> DouyinParser().parse(url, cookie)
+                Platform.DOUYIN -> DouyinParser(
+                    webViewPageFetcher = douyinWebViewFallback?.let { fetch -> { pageUrl -> fetch(pageUrl, cookie) } },
+                ).parse(url, cookie)
                 Platform.WEIBO -> WeiboParser().parse(url, cookie)
                 Platform.X -> XParser().parse(url, cookie)
             }

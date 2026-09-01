@@ -16,7 +16,7 @@ class RealLinkManualTest {
     fun realXhsLinkParses() {
         assumeTrue(System.getenv("LINKFETCH_REAL_TEST") == "1")
         runBlocking {
-            val client = LocalParseClient { null }
+            val client = LocalParseClient(cookieProvider = { null })
             val result = client.parse("http://xhslink.cn/o/1OhM4NLR50k")
             assertEquals("xhs", result.platform)
             assertTrue(result.medias.isNotEmpty())
@@ -29,7 +29,7 @@ class RealLinkManualTest {
     fun realWeiboLinkParses() {
         assumeTrue(System.getenv("LINKFETCH_REAL_TEST") == "1")
         runBlocking {
-            val client = LocalParseClient { null }
+            val client = LocalParseClient(cookieProvider = { null })
             val result = client.parse("https://weibo.com/6238113311/5326855628391978")
             assertEquals("weibo", result.platform)
             assertTrue(result.medias.isNotEmpty())
@@ -42,7 +42,7 @@ class RealLinkManualTest {
     fun realDouyinLinkParses() {
         assumeTrue(System.getenv("LINKFETCH_REAL_TEST") == "1")
         runBlocking {
-            val client = LocalParseClient { null }
+            val client = LocalParseClient(cookieProvider = { null })
             val result = client.parse("https://v.douyin.com/5LgdumGF1iw/")
             assertEquals("douyin", result.platform)
             assertTrue(result.medias.isNotEmpty())
@@ -53,7 +53,7 @@ class RealLinkManualTest {
     fun realXImageLinkParses() {
         assumeTrue(System.getenv("LINKFETCH_REAL_TEST") == "1")
         runBlocking {
-            val client = LocalParseClient { null }
+            val client = LocalParseClient(cookieProvider = { null })
             val result = client.parse("https://x.com/i/status/2083053411524850111")
             assertEquals("x", result.platform)
             assertTrue(result.medias.isNotEmpty())
@@ -65,7 +65,7 @@ class RealLinkManualTest {
     fun realXVideoLinkParses() {
         assumeTrue(System.getenv("LINKFETCH_REAL_TEST") == "1")
         runBlocking {
-            val client = LocalParseClient { null }
+            val client = LocalParseClient(cookieProvider = { null })
             val result = client.parse("https://x.com/i/status/2082841167251845607")
             assertEquals("x", result.platform)
             assertTrue(result.videos.isNotEmpty())

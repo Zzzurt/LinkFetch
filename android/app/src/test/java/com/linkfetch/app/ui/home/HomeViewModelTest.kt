@@ -36,7 +36,7 @@ class HomeViewModelTest {
 
     private fun createViewModel() = HomeViewModel(
         apiClient = ApiClient(settingsProvider = { AppSettings() }),
-        localParseClient = LocalParseClient { null },
+        localParseClient = LocalParseClient(cookieProvider = { null }),
         parseModeProvider = { "direct" },
         historyDao = FakeHistoryDao(),
         json = Json { ignoreUnknownKeys = true },
