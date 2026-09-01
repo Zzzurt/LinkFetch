@@ -1,12 +1,15 @@
 package com.linkfetch.app.ui.result
 
-import androidx.compose.animation.core.animateOffsetAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateOffsetAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -112,14 +115,17 @@ fun FullScreenImagePreview(
 }
 
 /**
- * 可缩放图片。未放大（scale == 1f）时不消费手势，把水平滑动让给 pager；
- * 放大后才响应拖动平移与双指缩放；双击平滑复位。
+ * 可缩放图片。手势策略（与 pager 共存）：
+ * - 单指且未放大：不消费事件 → 水平滑动切换 pager
+ * - 单指且已放大：消费事件 → 拖动平移图片
+ * - 双指（捏合）：消费事件 → 缩放
+ * - 双击：放大到 2.5x / 已放大则复位
  */
 @Composable
 private fun ZoomableImage(url: String, modifier: Modifier = Modifier) {
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
-    // 平滑过渡动画：缩放与平移（双击复位时体现）
+    // 平滑过渡动画：缩放与平移（双击放大/复位时体现）
     val animatedScale by animateFloatAsState(
         targetValue = scale,
         animationSpec = tween(180),
@@ -133,21 +139,41 @@ private fun ZoomableImage(url: String, modifier: Modifier = Modifier) {
 
     Box(
         modifier = modifier
-            // 只有放大时才消费手势，避免劫持 pager 的水平滑动
-            .pointerInput(scale > 1f) {
-                if (scale > 1f) {
-                    detectTransformGestures { _, pan, zoom, _ ->
-                        val newScale = (scale * zoom).coerceIn(1f, 6f)
-                        scale = newScale
-                        offset = if (newScale > 1f) offset + pan else Offset.Zero
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    // 本轮手势累计变化（calculateZoom/Pan 相对手势起点，需自行差分）
+                    var lastZoom = 1f
+                    var lastPan = Offset.Zero
+                    awaitFirstDown(requireUnconsumed = false)
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.filter { it.pressed }
+                        if (pressed.isEmpty()) break
+                        val pointers = pressed.size
+                        val deltaZoom = event.calculateZoom() / lastZoom
+                        val deltaPan = event.calculatePan() - lastPan
+                        lastZoom = event.calculateZoom()
+                        lastPan = event.calculatePan()
+                        // 双指开始 = 进入缩放；单指时若已放大也进入平移
+                        if (pointers >= 2 || scale > 1f) {
+                            val newScale = (scale * deltaZoom).coerceIn(1f, 6f)
+                            scale = newScale
+                            offset = if (newScale > 1f) offset + deltaPan else Offset.Zero
+                            pressed.forEach { it.consume() }
+                        }
                     }
                 }
             }
             .pointerInput(Unit) {
                 detectTapGestures(
                     onDoubleTap = {
-                        scale = 1f
-                        offset = Offset.Zero
+                        if (scale > 1f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                        } else {
+                            scale = 2.5f
+                            offset = Offset.Zero
+                        }
                     },
                 )
             },

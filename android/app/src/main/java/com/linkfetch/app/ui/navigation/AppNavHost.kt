@@ -4,9 +4,11 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
@@ -20,6 +22,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -155,20 +158,26 @@ private fun RowScope.NavTab(
             }
         },
         icon = {
-            Crossfade(
-                targetState = selected,
-                animationSpec = tween(200),
-                label = "tabIconText",
-            ) { isSelected ->
-                if (isSelected) {
-                    Text(
-                        text = label,
-                        color = textTint,
-                        style = MaterialTheme.typography.labelMedium,
-                        maxLines = 1,
-                    )
-                } else {
-                    Icon(icon, contentDescription = label, tint = iconTint)
+            // 固定容器容纳图标与文字，避免 Crossfade 切换时宽度跳变
+            Box(
+                modifier = Modifier.size(48.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Crossfade(
+                    targetState = selected,
+                    animationSpec = tween(180),
+                    label = "tabIconText",
+                ) { isSelected ->
+                    if (isSelected) {
+                        Text(
+                            text = label,
+                            color = textTint,
+                            style = MaterialTheme.typography.labelMedium,
+                            maxLines = 1,
+                        )
+                    } else {
+                        Icon(icon, contentDescription = label, tint = iconTint)
+                    }
                 }
             }
         },
