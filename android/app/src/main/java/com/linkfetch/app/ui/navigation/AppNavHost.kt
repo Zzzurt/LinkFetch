@@ -1,9 +1,11 @@
 package com.linkfetch.app.ui.navigation
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -21,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -53,7 +56,7 @@ fun AppNavHost(container: AppContainer) {
     Scaffold(
         bottomBar = {
             if (currentRoute == Route.HOME || currentRoute == Route.HISTORY || currentRoute == Route.SETTINGS) {
-                NavigationBar {
+                NavigationBar(modifier = Modifier.height(64.dp)) {
                     NavTab(
                         navController = navController,
                         route = Route.HOME,
@@ -111,7 +114,7 @@ fun AppNavHost(container: AppContainer) {
     }
 }
 
-/** 底部 Tab：选中态品牌色 + 颜色过渡动画（NavigationBarItem 是 RowScope 扩展函数） */
+/** 底部 Tab：未选中只显示图标；选中时图标淡出、文字淡入（Crossfade），整体更紧凑。 */
 @Composable
 private fun RowScope.NavTab(
     navController: NavHostController,
@@ -151,8 +154,25 @@ private fun RowScope.NavTab(
                 restoreState = true
             }
         },
-        icon = { Icon(icon, contentDescription = null, tint = iconTint) },
-        label = { Text(label, color = textTint) },
+        icon = {
+            Crossfade(
+                targetState = selected,
+                animationSpec = tween(200),
+                label = "tabIconText",
+            ) { isSelected ->
+                if (isSelected) {
+                    Text(
+                        text = label,
+                        color = textTint,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                    )
+                } else {
+                    Icon(icon, contentDescription = label, tint = iconTint)
+                }
+            }
+        },
+        label = null,
         colors = NavigationBarItemDefaults.colors(
             selectedIconColor = selectedColor,
             selectedTextColor = selectedColor,

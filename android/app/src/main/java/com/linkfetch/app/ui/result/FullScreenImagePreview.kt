@@ -1,5 +1,8 @@
 package com.linkfetch.app.ui.result
 
+import androidx.compose.animation.core.animateOffsetAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -9,11 +12,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -22,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,8 +41,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 
-/** 全屏图片预览：左右滑动切换 + 双指缩放 + 双击复位。 */
+/** 全屏图片预览：左右滑动切换 + 双指缩放 + 双击复位 + 箭头切换按钮。 */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FullScreenImagePreview(
@@ -50,6 +58,7 @@ fun FullScreenImagePreview(
     ) {
         val safeIndex = initialIndex.coerceIn(0, urls.size - 1)
         val pagerState = rememberPagerState(initialPage = safeIndex)
+        val scope = rememberCoroutineScope()
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             HorizontalPager(
                 pageCount = urls.size,
@@ -75,22 +84,63 @@ fun FullScreenImagePreview(
                     Icon(Icons.Filled.Close, contentDescription = "关闭", tint = Color.White)
                 }
             }
+            // 左右切换按钮：多图时居中显示，切换带动画
+            if (urls.size > 1 && pagerState.currentPage > 0) {
+                IconButton(
+                    onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage - 1) } },
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = 4.dp)
+                        .size(48.dp),
+                ) {
+                    Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "上一张", tint = Color.White.copy(alpha = 0.8f))
+                }
+            }
+            if (urls.size > 1 && pagerState.currentPage < urls.size - 1) {
+                IconButton(
+                    onClick = { scope.launch { pagerState.animateScrollToPage(pagerState.currentPage + 1) } },
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 4.dp)
+                        .size(48.dp),
+                ) {
+                    Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "下一张", tint = Color.White.copy(alpha = 0.8f))
+                }
+            }
         }
     }
 }
 
+/**
+ * 可缩放图片。未放大（scale == 1f）时不消费手势，把水平滑动让给 pager；
+ * 放大后才响应拖动平移与双指缩放；双击平滑复位。
+ */
 @Composable
 private fun ZoomableImage(url: String, modifier: Modifier = Modifier) {
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
+    // 平滑过渡动画：缩放与平移（双击复位时体现）
+    val animatedScale by animateFloatAsState(
+        targetValue = scale,
+        animationSpec = tween(180),
+        label = "imgScale",
+    )
+    val animatedOffset by animateOffsetAsState(
+        targetValue = offset,
+        animationSpec = tween(180),
+        label = "imgOffset",
+    )
 
     Box(
         modifier = modifier
-            .pointerInput(Unit) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    val newScale = (scale * zoom).coerceIn(1f, 6f)
-                    scale = newScale
-                    offset = if (newScale > 1f) offset + pan else Offset.Zero
+            // 只有放大时才消费手势，避免劫持 pager 的水平滑动
+            .pointerInput(scale > 1f) {
+                if (scale > 1f) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        val newScale = (scale * zoom).coerceIn(1f, 6f)
+                        scale = newScale
+                        offset = if (newScale > 1f) offset + pan else Offset.Zero
+                    }
                 }
             }
             .pointerInput(Unit) {
@@ -110,10 +160,10 @@ private fun ZoomableImage(url: String, modifier: Modifier = Modifier) {
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                    translationX = offset.x
-                    translationY = offset.y
+                    scaleX = animatedScale
+                    scaleY = animatedScale
+                    translationX = animatedOffset.x
+                    translationY = animatedOffset.y
                 },
         )
     }
