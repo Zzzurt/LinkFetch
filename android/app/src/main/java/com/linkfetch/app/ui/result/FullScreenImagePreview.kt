@@ -1,7 +1,6 @@
 package com.linkfetch.app.ui.result
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateOffsetAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -115,50 +114,39 @@ fun FullScreenImagePreview(
 }
 
 /**
- * 可缩放图片。手势策略（与 pager 共存）：
- * - 单指且未放大：不消费事件 → 水平滑动切换 pager
- * - 单指且已放大：消费事件 → 拖动平移图片
- * - 双指（捏合）：消费事件 → 缩放
+ * 可缩放图片。手势策略（与 pager 共存，仿系统相册）：
+ * - 未放大单指：不消费事件 → pager 水平滑动切页
+ * - 已放大单指：第一指按下即消费 → 拖动平移图片
+ * - 双指捏合：接管事件 → 缩放 + 跟随质心移动
  * - 双击：放大到 2.5x / 已放大则复位
  */
 @Composable
 private fun ZoomableImage(url: String, modifier: Modifier = Modifier) {
     var scale by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
-    // 平滑过渡动画：缩放与平移（双击放大/复位时体现）
-    val animatedScale by animateFloatAsState(
-        targetValue = scale,
-        animationSpec = tween(180),
-        label = "imgScale",
-    )
-    val animatedOffset by animateOffsetAsState(
-        targetValue = offset,
-        animationSpec = tween(180),
-        label = "imgOffset",
-    )
 
     Box(
         modifier = modifier
             .pointerInput(Unit) {
                 awaitEachGesture {
-                    // 本轮手势累计变化（calculateZoom/Pan 相对手势起点，需自行差分）
-                    var lastZoom = 1f
-                    var lastPan = Offset.Zero
-                    awaitFirstDown(requireUnconsumed = false)
+                    var active = false
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    // 已放大：从第一指按下就接管，避免 pager 抢走拖动
+                    if (scale > 1f) {
+                        down.consume()
+                        active = true
+                    }
                     while (true) {
                         val event = awaitPointerEvent()
                         val pressed = event.changes.filter { it.pressed }
                         if (pressed.isEmpty()) break
-                        val pointers = pressed.size
-                        val deltaZoom = event.calculateZoom() / lastZoom
-                        val deltaPan = event.calculatePan() - lastPan
-                        lastZoom = event.calculateZoom()
-                        lastPan = event.calculatePan()
-                        // 双指开始 = 进入缩放；单指时若已放大也进入平移
-                        if (pointers >= 2 || scale > 1f) {
-                            val newScale = (scale * deltaZoom).coerceIn(1f, 6f)
+                        // 第二根手指落下 → 立即接管进入缩放
+                        if (!active && pressed.size >= 2) active = true
+                        if (active) {
+                            // calculateZoom/Pan 返回相对上一事件的增量，直接使用
+                            val newScale = (scale * event.calculateZoom()).coerceIn(1f, 6f)
                             scale = newScale
-                            offset = if (newScale > 1f) offset + deltaPan else Offset.Zero
+                            offset = if (newScale > 1f) offset + event.calculatePan() else Offset.Zero
                             pressed.forEach { it.consume() }
                         }
                     }
@@ -179,6 +167,12 @@ private fun ZoomableImage(url: String, modifier: Modifier = Modifier) {
             },
         contentAlignment = Alignment.Center,
     ) {
+        // 缩放走动画（双击放大/复位平滑；捏合持续更新 target 视觉跟手），平移用瞬态保证拖动跟手
+        val animatedScale by animateFloatAsState(
+            targetValue = scale,
+            animationSpec = tween(160),
+            label = "imgScale",
+        )
         AsyncImage(
             model = url,
             contentDescription = null,
@@ -188,8 +182,8 @@ private fun ZoomableImage(url: String, modifier: Modifier = Modifier) {
                 .graphicsLayer {
                     scaleX = animatedScale
                     scaleY = animatedScale
-                    translationX = animatedOffset.x
-                    translationY = animatedOffset.y
+                    translationX = offset.x
+                    translationY = offset.y
                 },
         )
     }

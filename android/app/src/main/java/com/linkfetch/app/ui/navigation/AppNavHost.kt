@@ -23,9 +23,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -118,6 +120,7 @@ fun AppNavHost(container: AppContainer) {
 }
 
 /** 底部 Tab：未选中只显示图标；选中时图标淡出、文字淡入（Crossfade），整体更紧凑。 */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun RowScope.NavTab(
     navController: NavHostController,
@@ -172,7 +175,9 @@ private fun RowScope.NavTab(
                         Text(
                             text = label,
                             color = textTint,
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                platformStyle = PlatformTextStyle(includeFontPadding = false),
+                            ),
                             maxLines = 1,
                         )
                     } else {
