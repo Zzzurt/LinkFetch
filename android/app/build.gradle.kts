@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,9 +8,15 @@ plugins {
 }
 
 // 构建输出目录：默认使用系统临时目录，避免在仓库中写死本机路径；
+// 但 KSP 无法处理与工程跨盘符的输出目录（IllegalArgumentException: this and base files have different roots），
+// 跨盘符时回退为模块内默认 build/（已在 .gitignore 忽略）。
 // 需要固定输出位置时用 -Plinkfetch.buildDir=<绝对路径> 覆盖
 val linkfetchBuildDir: String = (project.findProperty("linkfetch.buildDir") as String?)
-    ?: (System.getProperty("java.io.tmpdir") + "/LinkFetchBuild/app")
+    ?: run {
+        val tmpDir = File(System.getProperty("java.io.tmpdir"), "LinkFetchBuild/app")
+        val sameRoot = tmpDir.canonicalFile.toPath().root == project.projectDir.canonicalFile.toPath().root
+        if (sameRoot) tmpDir.absolutePath else "build"
+    }
 buildDir = file(linkfetchBuildDir)
 
 android {
@@ -19,14 +27,16 @@ android {
         applicationId = "com.linkfetch.app"
         minSdk = 26
         targetSdk = 33
-        versionCode = 19
-        versionName = "1.6.7"
+        versionCode = 22
+        versionName = "1.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            // 开启 R8 代码压缩 + 资源收缩，显著减小 APK 体积
+            isMinifyEnabled = true
+            isShrinkResources = true
             // 发布版签名（与 debug 同 key，保证可安装；如有正式 keystore 可替换）
             signingConfig = signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
