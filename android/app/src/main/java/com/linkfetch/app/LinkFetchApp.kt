@@ -3,7 +3,6 @@ package com.linkfetch.app
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.os.Build
 import com.linkfetch.app.data.AppContainer
 
 class LinkFetchApp : Application() {
@@ -18,14 +17,15 @@ class LinkFetchApp : Application() {
     }
 
     private fun createDownloadChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_DOWNLOADS,
-                "下载完成",
-                NotificationManager.IMPORTANCE_DEFAULT,
-            )
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
-        }
+        // minSdk 26 == NotificationChannel 的引入版本，无需再做版本判断
+        val channel = NotificationChannel(
+            CHANNEL_DOWNLOADS,
+            // 渠道 id 保持 "downloads" 不变（改 id 会新建渠道并丢失用户已设的优先级）；
+            // 名称可随时更新，系统会对已存在渠道应用新的 name。
+            "保存完成",
+            NotificationManager.IMPORTANCE_DEFAULT,
+        )
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
     }
 
     companion object {

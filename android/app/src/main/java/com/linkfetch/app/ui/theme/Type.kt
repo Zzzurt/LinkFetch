@@ -20,6 +20,18 @@ val LinkFetchTypography = Typography(
         lineHeight = 34.sp,
         fontWeight = FontWeight.Bold,
     ),
+    /**
+     * 内容标题（如结果页的作品标题）。
+     *
+     * M3 默认 headlineSmall 是 24sp，这里收到 20sp：一是补上 16sp→22sp 之间缺失的一档
+     * （此前要么 16sp 太小压不住页面，要么直接跳到 22sp 与页标题同级），
+     * 二是让"作品标题"比页标题（TopAppBar / titleLarge 22sp）低一档，两个大标题不打架。
+     */
+    headlineSmall = TextStyle(
+        fontSize = 20.sp,
+        lineHeight = 27.sp,
+        fontWeight = FontWeight.SemiBold,
+    ),
     titleLarge = TextStyle(
         fontSize = 22.sp,
         lineHeight = 28.sp,

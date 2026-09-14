@@ -31,31 +31,47 @@ import androidx.media3.ui.PlayerView
 
 /**
  * 视频播放器：加载期显示封面遮罩（点击开始播放），播放中保持屏幕常亮。
+ *
+ * 生命周期要点（对应此前的缺陷）：
+ * - player 用不带 url 的 `remember` 创建，url 变化时由 DisposableEffect(player, url) 换片，
+ *   避免旧 player 永不释放；
+ * - 用 applicationContext 构造 ExoPlayer，防止其持有 Activity 引用；
+ * - AndroidView 提供 update / onRelease，保证 PlayerView 始终绑定当前 player 并在销毁时解绑。
  */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 @Composable
 fun VideoPlayerView(url: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var started by remember(url) { mutableStateOf(false) }
-    val player = remember(url) {
-        ExoPlayer.Builder(context).build().apply {
-            setMediaItem(MediaItem.fromUri(url))
-            prepare()
-            playWhenReady = false
+    // 不带 url 作为 key：实例在整个组合期保持同一个，url 变化只换媒体源，避免旧 player 泄漏
+    val playerRef = remember { ExoPlayer.Builder(context.applicationContext).build() }
+
+    DisposableEffect(playerRef, url) {
+        playerRef.setMediaItem(MediaItem.fromUri(url))
+        playerRef.prepare()
+        playerRef.playWhenReady = false
+        onDispose {
+            playerRef.stop()
+            playerRef.clearMediaItems()
         }
     }
-    DisposableEffect(Unit) {
-        onDispose { player.release() }
+    DisposableEffect(playerRef) {
+        onDispose { playerRef.release() }
     }
+
     Box(modifier = modifier) {
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
-                    this.player = player
                     useController = true
                     keepScreenOn = true
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    // player 用无 key 的 remember 创建，实例在整个组合期不变，此处捕获是安全的
+                    player = playerRef
                 }
             },
+            // url 变化时 player 实例不变，update 作为兜底保证绑定关系始终正确
+            update = { view -> view.player = playerRef },
             modifier = Modifier.fillMaxSize(),
         )
         if (!started) {
@@ -66,7 +82,7 @@ fun VideoPlayerView(url: String, modifier: Modifier = Modifier) {
                     .background(MaterialTheme.colorScheme.surfaceVariant)
                     .clickable {
                         started = true
-                        player.play()
+                        playerRef.play()
                     },
                 contentAlignment = Alignment.Center,
             ) {

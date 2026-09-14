@@ -1,6 +1,5 @@
 package com.linkfetch.app.ui.history
 
-import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -22,8 +21,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -39,6 +38,8 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,21 +54,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import coil.compose.AsyncImage
 import com.linkfetch.app.data.AppContainer
 import com.linkfetch.app.data.db.HistoryEntity
 import com.linkfetch.app.ui.components.EmptyState
+import com.linkfetch.app.ui.components.PageHeader
 import com.linkfetch.app.ui.components.PlatformBadge
-import com.linkfetch.app.ui.components.ShimmerBox
+import com.linkfetch.app.ui.components.ShimmerImage
 import com.linkfetch.app.ui.components.TypeTag
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
@@ -85,7 +84,6 @@ fun HistoryScreen(
     onOpenResult: () -> Unit,
     onGoHome: () -> Unit,
 ) {
-    val context = LocalContext.current
     val viewModel: HistoryViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
@@ -101,171 +99,176 @@ fun HistoryScreen(
     )
     val items by viewModel.items.collectAsStateWithLifecycle()
     val isDark = isSystemInDarkTheme()
+    val snackbarHostState = remember { SnackbarHostState() }
     // 单条删除确认（与批量删除一致，防误删）
     var confirmDelete by remember { mutableStateOf<HistoryEntity?>(null) }
 
     LaunchedEffect(viewModel.message) {
         viewModel.message?.let {
-            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            snackbarHostState.showSnackbar(it)
             viewModel.consumeMessage()
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Spacing.screen, vertical = Spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = if (viewModel.selectionMode) "已选 ${viewModel.selectedIds.size} 项" else "历史记录",
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            if (viewModel.selectionMode) {
-                TextButton(onClick = viewModel::clearSelection) {
-                    Text("取消")
+    // 用 Box 承载 Snackbar 浮层（消息反馈与其他页统一走 Snackbar，原先用 Toast 样式不一致）
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            PageHeader(
+                title = if (viewModel.selectionMode) "已选 ${viewModel.selectedIds.size} 项" else "历史记录",
+                modifier = Modifier.padding(horizontal = Spacing.screen, vertical = Spacing.md),
+            ) {
+                if (viewModel.selectionMode) {
+                    TextButton(onClick = viewModel::clearSelection) {
+                        Text("取消")
+                    }
+                } else {
+                    // 常驻的多选入口：长按虽然也能进多选，但界面上没有任何提示，多数用户发现不了
+                    if (items.isNotEmpty()) {
+                        TextButton(onClick = viewModel::enterSelection) {
+                            Text("选择")
+                        }
+                    }
+                    IconButton(onClick = viewModel::requestClear, enabled = items.isNotEmpty()) {
+                        Icon(Icons.Filled.Delete, contentDescription = "清空历史")
+                    }
+                }
+            }
+
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = Spacing.screen),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+            ) {
+                listOf(
+                    "all" to "全部",
+                    "xhs" to "小红书",
+                    "douyin" to "抖音",
+                    "weibo" to "微博",
+                    "x" to "X",
+                ).forEach { (key, label) ->
+                    val accent = if (key == "all") {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        platformAccent(Platform.fromKey(key)!!, isDark)
+                    }
+                    FilterChip(
+                        selected = viewModel.filter == key,
+                        onClick = { viewModel.onFilterChange(key) },
+                        label = { Text(label) },
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = accent,
+                            selectedLabelColor = Color.White,
+                        ),
+                    )
+                }
+            }
+            Spacer(Modifier.height(Spacing.sm))
+    
+            val visible = viewModel.visibleItems
+            val allSelected = visible.isNotEmpty() && visible.all { it.id in viewModel.selectedIds }
+            if (visible.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (items.isEmpty()) {
+                        EmptyState(
+                            title = "还没有解析记录",
+                            message = "解析成功的内容会自动记录在这里",
+                            actionText = "去解析",
+                            onAction = onGoHome,
+                        )
+                    } else {
+                        EmptyState(
+                            title = "该平台暂无记录",
+                            message = "换个平台筛选试试",
+                            icon = Icons.Outlined.SearchOff,
+                        )
+                    }
                 }
             } else {
-                IconButton(onClick = viewModel::requestClear, enabled = items.isNotEmpty()) {
-                    Icon(Icons.Filled.Delete, contentDescription = "清空历史")
-                }
-            }
-        }
-
-        FlowRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = Spacing.screen),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-        ) {
-            listOf(
-                "all" to "全部",
-                "xhs" to "小红书",
-                "douyin" to "抖音",
-                "weibo" to "微博",
-                "x" to "X",
-            ).forEach { (key, label) ->
-                val accent = if (key == "all") {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    platformAccent(Platform.fromKey(key)!!, isDark)
-                }
-                FilterChip(
-                    selected = viewModel.filter == key,
-                    onClick = { viewModel.onFilterChange(key) },
-                    label = { Text(label) },
-                    modifier = Modifier.padding(vertical = 4.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = accent,
-                        selectedLabelColor = Color.White,
-                    ),
-                )
-            }
-        }
-        Spacer(Modifier.height(Spacing.sm))
-
-        val visible = viewModel.visibleItems
-        val allSelected = visible.isNotEmpty() && visible.all { it.id in viewModel.selectedIds }
-        if (visible.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (items.isEmpty()) {
-                    EmptyState(
-                        title = "还没有下载记录",
-                        message = "解析成功的内容会自动保存在这里",
-                        actionText = "去解析",
-                        onAction = onGoHome,
-                    )
-                } else {
-                    EmptyState(
-                        title = "该平台暂无记录",
-                        message = "换个平台筛选试试",
-                        icon = Icons.Outlined.SearchOff,
-                    )
-                }
-            }
-        } else {
-            val grouped = remember(visible) { groupByDay(visible) }
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentPadding = PaddingValues(start = Spacing.screen, end = Spacing.screen, bottom = Spacing.lg),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                grouped.forEach { (label, group) ->
-                    item(key = "header-$label") {
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
-                        )
-                    }
-                    items(group, key = { it.id }) { entity ->
-                        HistoryCard(
-                            entity = entity,
-                            selectionMode = viewModel.selectionMode,
-                            selected = entity.id in viewModel.selectedIds,
-                            reParsing = viewModel.reParsingId == entity.id,
-                            onClick = {
-                                if (viewModel.selectionMode) {
-                                    viewModel.toggleSelect(entity.id)
-                                } else if (viewModel.open(entity)) {
-                                    onOpenResult()
-                                }
-                            },
-                            onLongPress = { viewModel.longPress(entity.id) },
-                            onReparse = { viewModel.reparse(entity) },
-                            onDelete = { confirmDelete = entity },
-                        )
-                    }
-                }
-            }
-        }
-
-        // 多选模式：底部操作条（全选 / 删除），拇指可达
-        if (viewModel.selectionMode) {
-            Surface(
-                tonalElevation = 3.dp,
-                color = MaterialTheme.colorScheme.surface,
-            ) {
-                Row(
+                val grouped = remember(visible) { groupByDay(visible) }
+                LazyColumn(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = Spacing.screen, vertical = Spacing.xs),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentPadding = PaddingValues(start = Spacing.screen, end = Spacing.screen, bottom = Spacing.lg),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    TextButton(onClick = viewModel::selectAllOrClear) {
-                        Text(if (allSelected) "取消全选" else "全选")
+                    grouped.forEach { (label, group) ->
+                        item(key = "header-$label") {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
+                            )
+                        }
+                        items(group, key = { it.id }) { entity ->
+                            HistoryCard(
+                                entity = entity,
+                                selectionMode = viewModel.selectionMode,
+                                selected = entity.id in viewModel.selectedIds,
+                                reParsing = viewModel.reParsingId == entity.id,
+                                onClick = {
+                                    if (viewModel.selectionMode) {
+                                        viewModel.toggleSelect(entity.id)
+                                    } else if (viewModel.open(entity)) {
+                                        onOpenResult()
+                                    }
+                                },
+                                onLongPress = { viewModel.longPress(entity.id) },
+                                onToggle = { viewModel.toggleSelect(entity.id) },
+                                onReparse = { viewModel.reparse(entity) },
+                                onDelete = { confirmDelete = entity },
+                            )
+                        }
                     }
-                    Spacer(Modifier.weight(1f))
-                    Text(
-                        text = "已选 ${viewModel.selectedIds.size} 项",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.width(Spacing.md))
-                    TextButton(onClick = viewModel::requestDeleteSelected) {
-                        Icon(
-                            Icons.Filled.Delete,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text("删除", color = MaterialTheme.colorScheme.error)
+                }
+            }
+    
+            // 多选模式：底部操作条（全选 / 删除），拇指可达
+            if (viewModel.selectionMode) {
+                Surface(
+                    tonalElevation = 3.dp,
+                    color = MaterialTheme.colorScheme.surface,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = Spacing.screen, vertical = Spacing.xs),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = viewModel::selectAllOrClear) {
+                            Text(if (allSelected) "取消全选" else "全选")
+                        }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = viewModel::requestDeleteSelected) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("删除", color = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            // 多选时把浮层抬到底部操作条之上
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = if (viewModel.selectionMode) 56.dp else 0.dp),
+        )
     }
 
     if (viewModel.confirmClear) {
@@ -365,13 +368,31 @@ private fun HistoryCard(
     reParsing: Boolean,
     onClick: () -> Unit,
     onLongPress: () -> Unit,
+    onToggle: () -> Unit,
     onReparse: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongPress),
+            .then(
+                if (selectionMode) {
+                    // 多选态：用 checkbox 语义，读屏才能读出「已选中 / 未选中」并给出切换动作；
+                    // 原先只有 combinedClickable，读屏完全感知不到选中状态
+                    Modifier.toggleable(
+                        value = selected,
+                        role = Role.Checkbox,
+                        onValueChange = { onToggle() },
+                    )
+                } else {
+                    Modifier.combinedClickable(
+                        onClickLabel = "打开结果页",
+                        onLongClickLabel = "选择",
+                        onClick = onClick,
+                        onLongClick = onLongPress,
+                    )
+                },
+            ),
         shape = Radii.card,
         colors = CardDefaults.cardColors(
             containerColor = if (selected) {
@@ -419,18 +440,13 @@ private fun HistoryCard(
             Box(
                 modifier = Modifier
                     .size(64.dp)
-                    .clip(RoundedCornerShape(12.dp)),
+                    .clip(Radii.small),
             ) {
-                ShimmerBox(
-                    modifier = Modifier.fillMaxSize(),
-                    shape = RoundedCornerShape(12.dp),
-                )
                 if (entity.coverUrl != null) {
-                    AsyncImage(
+                    ShimmerImage(
                         model = entity.coverUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
+                        shape = Radii.small,
                     )
                 } else {
                     // 无封面：平台色渐变底 + 徽标，替代灰底平铺
@@ -471,7 +487,7 @@ private fun HistoryCard(
                     text = buildString {
                         Platform.fromKey(entity.platform)?.let { append(it.label).append(" · ") }
                         append(formatHistoryTime(entity.createdAt))
-                        if (entity.downloadedCount > 0) append(" · 已保存 ${entity.downloadedCount}")
+                        if (entity.downloadedCount > 0) append(" · 已保存 ${entity.downloadedCount} 张")
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

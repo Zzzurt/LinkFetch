@@ -6,16 +6,20 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -42,14 +46,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImagePainter
+import coil.compose.rememberAsyncImagePainter
 import com.linkfetch.app.ui.theme.Blue500
 import com.linkfetch.app.ui.theme.Blue600
 import com.linkfetch.app.ui.theme.Radii
+import com.linkfetch.app.ui.theme.Slate300
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.platformAccent
 import com.linkfetch.app.util.Platform
@@ -58,7 +66,7 @@ import com.linkfetch.app.util.Platform
 
 /** App 内品牌位：蓝渐变圆角方块 + 链接图标 */
 @Composable
-fun BrandMark(size: Dp = 40.dp, modifier: Modifier = Modifier) {
+fun BrandMark(modifier: Modifier = Modifier, size: Dp = 40.dp) {
     Box(
         modifier = modifier
             .size(size)
@@ -86,11 +94,14 @@ fun PlatformBadge(
     val accent = platformAccent(platform, isSystemInDarkTheme())
     Box(
         modifier = modifier
-            .size(size.dp)
+            // 用 sizeIn 而不是 size：字号随系统放大时容器跟着长，单个汉字不会被圆标裁掉。
+            // 极端字号下会退化成胶囊形，比切掉笔画好。
+            .sizeIn(minWidth = size.dp, minHeight = size.dp)
             .background(
                 Brush.linearGradient(listOf(lerp(accent, Color.White, 0.14f), accent)),
                 CircleShape,
-            ),
+            )
+            .padding(horizontal = 3.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -98,6 +109,7 @@ fun PlatformBadge(
             color = Color.White,
             fontWeight = FontWeight.Bold,
             fontSize = (size * 0.45f).sp,
+            maxLines = 1,
         )
     }
 }
@@ -116,7 +128,9 @@ fun TypeTag(type: String, modifier: Modifier = Modifier) {
             .background(MaterialTheme.colorScheme.surfaceVariant, Radii.pill)
             .padding(horizontal = 10.dp, vertical = 3.dp),
         style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        // 深色下 onSurfaceVariant(#94A3B8) 压在 surfaceVariant(#273549) 上只有 4.84:1，
+        // 12sp 小字没有余量，单独提亮一档（约 8.4:1）
+        color = if (isSystemInDarkTheme()) Slate300 else MaterialTheme.colorScheme.onSurfaceVariant,
     )
 }
 
@@ -194,25 +208,34 @@ fun LoadingButton(
 
 // ---------- 标题 / 间距 ----------
 
+/**
+ * 页面标题栏：几个 Tab 页共用同一套字号、字重与对齐方式，
+ * 避免切页时标题的位置与基线各跳各的（此前历史页和设置页各写一份 Row）。
+ * 水平边距由调用方提供（设置页的外层 Column 已经有 padding）。
+ */
 @Composable
-fun SectionTitle(text: String, modifier: Modifier = Modifier) {
-    Text(
-        text = text,
-        modifier = modifier.padding(bottom = Spacing.xs),
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        fontWeight = FontWeight.SemiBold,
-    )
+fun PageHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+        )
+        actions()
+    }
 }
 
 @Composable
 fun VerticalSpace(height: Int) {
     Spacer(Modifier.height(height.dp))
-}
-
-@Composable
-fun VerticalSpace(height: Dp) {
-    Spacer(Modifier.height(height))
 }
 
 // ---------- 骨架屏 ----------
@@ -247,6 +270,45 @@ fun ShimmerBox(modifier: Modifier = Modifier, shape: Shape = Radii.small) {
                     ),
                 ),
         )
+    }
+}
+
+/**
+ * 带骨架屏的网络图片：只在「尚未加载完成」时显示 shimmer。
+ *
+ * 之前的写法是把 ShimmerBox 无条件垫在 AsyncImage 底下，图片加载完后 shimmer 只是被盖住，
+ * 动画仍在逐帧跑 —— 列表里每张图挂一个无限动画，是滚动掉帧与耗电的直接来源。
+ * 加载失败时退化为静态底色（不再循环动画），避免"加载失败的图永远在闪"。
+ */
+@Composable
+fun ShimmerImage(
+    model: Any?,
+    modifier: Modifier = Modifier,
+    shape: Shape = Radii.small,
+    contentDescription: String? = null,
+) {
+    val painter = rememberAsyncImagePainter(model)
+    Box(modifier = modifier) {
+        Image(
+            painter = painter,
+            contentDescription = contentDescription,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
+        when (painter.state) {
+            is AsyncImagePainter.State.Empty,
+            is AsyncImagePainter.State.Loading,
+            -> ShimmerBox(modifier = Modifier.fillMaxSize(), shape = shape)
+
+            is AsyncImagePainter.State.Error ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                )
+
+            else -> Unit
+        }
     }
 }
 

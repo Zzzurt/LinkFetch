@@ -6,9 +6,13 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
@@ -23,11 +27,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -44,6 +46,7 @@ import com.linkfetch.app.ui.theme.Blue300
 import com.linkfetch.app.ui.theme.Blue50
 import com.linkfetch.app.ui.theme.Blue600
 import com.linkfetch.app.ui.theme.Blue700
+import com.linkfetch.app.ui.theme.PageMaxWidth
 
 object Route {
     const val HOME = "home"
@@ -61,6 +64,10 @@ fun AppNavHost(container: AppContainer) {
     Scaffold(
         bottomBar = {
             if (currentRoute == Route.HOME || currentRoute == Route.HISTORY || currentRoute == Route.SETTINGS) {
+                // 紧凑导航栏（M3 默认是 80dp + 系统栏 inset）。
+                // 当前窗口不是 edge-to-edge，系统栏 inset 被系统消费为 0，所以 64dp 不会被挤压；
+                // ⚠️ 升 targetSdk 35 时 Android 15 会强制 edge-to-edge，inset 变成真实值，
+                //    64 - inset 会把 Tab 压扁 —— 届时需去掉这个固定高度并给四个页面补 inset 处理。
                 NavigationBar(modifier = Modifier.height(64.dp)) {
                     NavTab(
                         navController = navController,
@@ -87,40 +94,51 @@ fun AppNavHost(container: AppContainer) {
             }
         },
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = Route.HOME,
-            modifier = Modifier.padding(innerPadding),
+        // 平板 / 折叠屏展开 / 横屏：内容统一限宽并居中。
+        // 铺满时正文单行会超过 ~600dp，阅读要来回扫；图片网格也会被撑成巨幅。
+        // 放在导航层是为了让四个页面共用同一约束，避免各页各写一套。
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            composable(Route.HOME) {
-                HomeScreen(
-                    container = container,
-                    onOpenResult = { navController.navigate(Route.RESULT) },
-                    onOpenSettings = { navController.navigate(Route.SETTINGS) },
-                )
-            }
-            composable(Route.RESULT) {
-                ResultScreen(
-                    container = container,
-                    onBack = { navController.popBackStack() },
-                )
-            }
-            composable(Route.HISTORY) {
-                HistoryScreen(
-                    container = container,
-                    onOpenResult = { navController.navigate(Route.RESULT) },
-                    onGoHome = { navController.navigate(Route.HOME) },
-                )
-            }
-            composable(Route.SETTINGS) {
-                SettingsScreen(container = container)
+            NavHost(
+                navController = navController,
+                startDestination = Route.HOME,
+                modifier = Modifier
+                    .widthIn(max = PageMaxWidth)
+                    .fillMaxHeight(),
+            ) {
+                composable(Route.HOME) {
+                    HomeScreen(
+                        container = container,
+                        onOpenResult = { navController.navigate(Route.RESULT) },
+                        onOpenSettings = { navController.navigate(Route.SETTINGS) },
+                    )
+                }
+                composable(Route.RESULT) {
+                    ResultScreen(
+                        container = container,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
+                composable(Route.HISTORY) {
+                    HistoryScreen(
+                        container = container,
+                        onOpenResult = { navController.navigate(Route.RESULT) },
+                        onGoHome = { navController.navigate(Route.HOME) },
+                    )
+                }
+                composable(Route.SETTINGS) {
+                    SettingsScreen(container = container)
+                }
             }
         }
     }
 }
 
 /** 底部 Tab：未选中只显示图标；选中时图标淡出、文字淡入（Crossfade），整体更紧凑。 */
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun RowScope.NavTab(
     navController: NavHostController,
@@ -161,9 +179,10 @@ private fun RowScope.NavTab(
             }
         },
         icon = {
-            // 固定容器容纳图标与文字，避免 Crossfade 切换时宽度跳变
+            // 最小 48dp 容器容纳图标与文字，避免 Crossfade 切换时宽度跳变。
+            // 用 sizeIn 而不是 size：系统字体放大后"设置"两字可以撑开容器，不会被裁掉。
             Box(
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Crossfade(
@@ -175,9 +194,7 @@ private fun RowScope.NavTab(
                         Text(
                             text = label,
                             color = textTint,
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                platformStyle = PlatformTextStyle(includeFontPadding = false),
-                            ),
+                            style = MaterialTheme.typography.labelMedium,
                             maxLines = 1,
                         )
                     } else {

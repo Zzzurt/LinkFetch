@@ -66,6 +66,15 @@ class HistoryViewModel(
         }
     }
 
+    /**
+     * 进入多选模式：默认选中当前筛选下的第一条。
+     * selectionMode 由"选中集非空"驱动，所以必须有一个起始选中项；
+     * 这样用户点「选择」后能立刻看到底部操作条出现，而不用先猜要长按。
+     */
+    fun enterSelection() {
+        visibleItems.firstOrNull()?.let { selectedIds = setOf(it.id) }
+    }
+
     fun clearSelection() {
         selectedIds = emptySet()
     }

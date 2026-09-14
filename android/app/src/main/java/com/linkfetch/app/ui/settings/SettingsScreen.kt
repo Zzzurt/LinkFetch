@@ -1,5 +1,6 @@
 package com.linkfetch.app.ui.settings
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -15,29 +16,39 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cookie
 import androidx.compose.material.icons.filled.Dns
-import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -45,8 +56,11 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.linkfetch.app.BuildConfig
 import com.linkfetch.app.data.AppContainer
 import com.linkfetch.app.ui.components.LoadingButton
+import com.linkfetch.app.ui.components.PageHeader
 import com.linkfetch.app.ui.components.VerticalSpace
-import com.linkfetch.app.ui.theme.Radii
+import com.linkfetch.app.ui.theme.Spacing
+import com.linkfetch.app.ui.theme.SuccessGreen
+import com.linkfetch.app.ui.theme.WarningAmber
 
 @Composable
 fun SettingsScreen(container: AppContainer) {
@@ -70,82 +84,92 @@ fun SettingsScreen(container: AppContainer) {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = Spacing.screen, vertical = Spacing.md),
         ) {
-            Text(
-                text = "设置",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
+            PageHeader(title = "设置")
             VerticalSpace(8)
 
+            // 直连是唯一推荐用法；服务器模式收进默认关闭的开关后面，避免占用主视觉
             SettingsSection(
                 title = "解析方式",
                 icon = Icons.Filled.SwapHoriz,
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = viewModel.parseMode == "direct",
-                        onClick = { viewModel.onParseModeChange("direct") },
-                    )
-                    Column {
-                        Text("App 直连解析（推荐）", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "无需服务器，安装即用",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = viewModel.parseMode == "server",
-                        onClick = { viewModel.onParseModeChange("server") },
-                    )
-                    Column {
-                        Text("自建服务器解析", style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            "适合平台直连失效时使用",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-
-            SettingsSection(
-                title = "服务器（自建服务器模式）",
-                icon = Icons.Filled.Dns,
-            ) {
-                OutlinedTextField(
-                    value = viewModel.baseUrl,
-                    onValueChange = viewModel::onBaseUrlChange,
+                val serverMode = viewModel.parseMode == "server"
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("后端地址") },
-                    placeholder = { Text("http://10.0.2.2:8000") },
-                    singleLine = true,
-                )
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (serverMode) "自建服务器解析" else "App 直连解析（推荐）",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Text(
+                            text = if (serverMode) {
+                                "请求经自建服务转发，需要在下方配置服务器"
+                            } else {
+                                "无需服务器，安装即用"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = serverMode,
+                        onCheckedChange = { enabled ->
+                            viewModel.onParseModeChange(if (enabled) "server" else "direct")
+                        },
+                    )
+                }
                 Text(
-                    text = "自建解析服务的地址，局域网可用 http://192.168.x.x:8000",
+                    text = "自建服务器适合平台直连失效时使用；开启后需配置地址并保存。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                VerticalSpace(8)
-                OutlinedTextField(
-                    value = viewModel.apiToken,
-                    onValueChange = viewModel::onApiTokenChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("API Token（可选）") },
-                    singleLine = true,
-                )
-                VerticalSpace(8)
-                Row {
-                    LoadingButton(
-                        text = if (viewModel.testing) "测试中…" else "测试连接",
-                        loading = viewModel.testing,
-                        onClick = viewModel::testConnection,
-                        modifier = Modifier.weight(1f),
+            }
+
+            AnimatedVisibility(visible = viewModel.parseMode == "server") {
+                SettingsSection(
+                    title = "自建服务器",
+                    icon = Icons.Filled.Dns,
+                ) {
+                    OutlinedTextField(
+                        value = viewModel.baseUrl,
+                        onValueChange = viewModel::onBaseUrlChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("后端地址") },
+                        placeholder = { Text("http://10.0.2.2:8000") },
+                        singleLine = true,
                     )
+                    val cleartext = viewModel.isCleartext
+                    Text(
+                        text = if (cleartext) {
+                            "该地址为明文 http：Token 与 Cookie 将以明文发送，仅建议用于局域网 / 本机；公网地址会被直接拒绝。"
+                        } else {
+                            "自建解析服务的地址。局域网 http 需在 res/xml/network_security_config.xml 中放行。"
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (cleartext) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                    VerticalSpace(8)
+                    SecretField(
+                        value = viewModel.apiToken,
+                        onValueChange = viewModel::onApiTokenChange,
+                        label = "API Token（可选）",
+                    )
+                    VerticalSpace(8)
+                    Row {
+                        LoadingButton(
+                            text = if (viewModel.testing) "测试中…" else "测试连接",
+                            loading = viewModel.testing,
+                            onClick = viewModel::testConnection,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
 
@@ -154,84 +178,39 @@ fun SettingsScreen(container: AppContainer) {
                 icon = Icons.Filled.Cookie,
             ) {
                 Text(
-                    text = "部分受限内容需要登录态，填入对应平台 Cookie 可提升解析成功率",
+                    text = "部分受限内容需要登录态，填入对应平台 Cookie 可提升解析成功率。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = "Cookie 等同账号登录态，保存在应用私有目录且不参与系统备份。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 VerticalSpace(8)
-                OutlinedTextField(
+                SecretField(
                     value = viewModel.xhsCookie,
                     onValueChange = viewModel::onXhsCookieChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("小红书 Cookie") },
-                    singleLine = true,
+                    label = "小红书 Cookie",
                 )
                 VerticalSpace(8)
-                OutlinedTextField(
+                SecretField(
                     value = viewModel.douyinCookie,
                     onValueChange = viewModel::onDouyinCookieChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("抖音 Cookie") },
-                    singleLine = true,
+                    label = "抖音 Cookie",
                 )
                 VerticalSpace(8)
-                OutlinedTextField(
+                SecretField(
                     value = viewModel.weiboCookie,
                     onValueChange = viewModel::onWeiboCookieChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("微博 Cookie") },
-                    singleLine = true,
+                    label = "微博 Cookie",
                 )
-            }
-
-            SettingsSection(
-                title = "下载质量",
-                icon = Icons.Filled.HighQuality,
-                trailing = {
-                    Box(
-                        modifier = Modifier
-                            .clip(Radii.pill)
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
-                    ) {
-                        Text(
-                            text = "即将上线",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                },
-            ) {
-                val disabledText = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(
-                        selected = viewModel.quality == "hd",
-                        onClick = null,
-                        enabled = false,
-                    )
-                    Text("高清", style = MaterialTheme.typography.bodyMedium, color = disabledText)
-                    Spacer(Modifier.weight(1f))
-                    RadioButton(
-                        selected = viewModel.quality == "original",
-                        onClick = null,
-                        enabled = false,
-                    )
-                    Text("原图", style = MaterialTheme.typography.bodyMedium, color = disabledText)
+                VerticalSpace(4)
+                TextButton(onClick = viewModel::clearCredentials) {
+                    Text("清空全部凭证", color = MaterialTheme.colorScheme.error)
                 }
-                Text(
-                    text = "当前版本统一返回平台最高画质，该选项为后续版本预留",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
 
-            VerticalSpace(16)
-            LoadingButton(
-                text = if (viewModel.saving) "保存中…" else "保存设置",
-                loading = viewModel.saving,
-                onClick = viewModel::save,
-                modifier = Modifier.fillMaxWidth(),
-            )
             VerticalSpace(24)
             Text(
                 text = "链取 v${BuildConfig.VERSION_NAME}",
@@ -248,14 +227,98 @@ fun SettingsScreen(container: AppContainer) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
-            VerticalSpace(12)
+            // 给吸底保存条留出高度，避免最后这段说明被它盖住
+            VerticalSpace(96)
         }
+
+        // 保存条吸底常驻：Cookie 区与原先的保存按钮之间隔着整个分区，
+        // 填完凭证必须一路滚到底才能保存，忘点就静默丢失。
+        SettingsSaveBar(
+            dirty = viewModel.dirty,
+            saving = viewModel.saving,
+            onSave = viewModel::save,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
 
         SnackbarHost(
             hostState = snackbarHostState,
-            modifier = Modifier.align(Alignment.BottomCenter),
+            // 抬到保存条上方，避免与保存状态互相遮挡
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 96.dp),
         )
     }
+}
+
+/** 吸底保存条：常驻显示"是否有未保存的修改" + 保存按钮 */
+@Composable
+private fun SettingsSaveBar(
+    dirty: Boolean,
+    saving: Boolean,
+    onSave: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 3.dp,
+    ) {
+        Column(modifier = Modifier.padding(horizontal = Spacing.screen, vertical = Spacing.md)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(if (dirty) WarningAmber else SuccessGreen),
+                )
+                Spacer(Modifier.width(Spacing.sm))
+                Text(
+                    text = if (dirty) "有未保存的修改" else "设置已保存",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.height(Spacing.sm))
+            LoadingButton(
+                text = if (saving) "保存中…" else "保存设置",
+                loading = saving,
+                onClick = onSave,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = dirty,
+            )
+        }
+    }
+}
+
+/** 敏感字段：默认掩码显示，可切换明文。用于 API Token 与平台 Cookie，避免设置页被肩窥。 */
+@Composable
+private fun SecretField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+) {
+    var visible by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(label) },
+        singleLine = true,
+        visualTransformation = if (visible) {
+            VisualTransformation.None
+        } else {
+            PasswordVisualTransformation()
+        },
+        trailingIcon = {
+            IconButton(onClick = { visible = !visible }) {
+                Icon(
+                    imageVector = if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                    contentDescription = if (visible) "隐藏$label" else "显示$label",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+    )
 }
 
 @Composable
@@ -265,7 +328,9 @@ private fun SettingsSection(
     trailing: @Composable (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    VerticalSpace(8)
+    // 分区之间 16dp、分区内部 8~12dp：让"换了个话题"在间距上就看得出来，
+    // 此前分区间距与分区内间距同为 8dp，几块设置糊成一片
+    VerticalSpace(16)
     Row(
         modifier = Modifier
             .fillMaxWidth()

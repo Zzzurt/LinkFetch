@@ -48,8 +48,11 @@ private val DarkColors = darkColorScheme(
     onSurface = DarkOnSurface,
     surfaceVariant = DarkSurfaceHigh,
     onSurfaceVariant = DarkOnSurfaceVariant,
-    outline = Slate700,
-    outlineVariant = Slate800,
+    // 深色下的分层靠描边，因此这两个值必须与 surface(#1E293B) 有可见差异：
+    // 原先 outlineVariant = Slate800(#1E293B) 与卡片底色完全相同，画上去等于没画。
+    // 现在 卡片细描边(Slate700) < 输入框边框(Slate600)，形成可辨的两级。
+    outline = Slate600,
+    outlineVariant = Slate700,
     error = ErrorRedDark,
     onError = Color(0xFF0F172A),
     errorContainer = ErrorContainerDark,
