@@ -5,10 +5,10 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
-import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
+import androidx.exifinterface.media.ExifInterface
 import com.linkfetch.app.data.model.MediaItemDto
 import java.io.File
 import java.io.FileInputStream
@@ -71,8 +71,14 @@ class MediaDownloader(
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: DownloadException) {
+            throw e
         } catch (e: IOException) {
             throw DownloadException("下载失败：${e.message ?: "网络异常"}")
+        } catch (e: Throwable) {
+            // 兜底收敛：非法 URL（IllegalArgumentException）、权限不足（SecurityException）、
+            // 大图解码 OOM 等都会落到这里。若不收敛，异常会穿透 ViewModel 直达协程顶层并崩溃。
+            throw DownloadException("下载失败：${e.message ?: e::class.simpleName ?: "未知错误"}")
         }
     }
 
@@ -123,6 +129,8 @@ class MediaDownloader(
             throw e
         } catch (e: IOException) {
             throw DownloadException("Live 图下载失败：${e.message ?: "网络异常"}")
+        } catch (e: Throwable) {
+            throw DownloadException("Live 图处理失败：${e.message ?: e::class.simpleName ?: "未知错误"}")
         } finally {
             runCatching { imageTmp.delete() }
             runCatching { videoTmp.delete() }
@@ -298,8 +306,11 @@ class MediaDownloader(
         }
     }
 
-    private fun isHlsUrl(url: String): Boolean =
-        url.contains(".m3u8", ignoreCase = true)
+    /** 只认路径部分以 .m3u8 结尾的地址，避免普通链接的查询参数里出现 ".m3u8" 被误判。 */
+    private fun isHlsUrl(url: String): Boolean {
+        val path = url.substringBefore('?').substringBefore('#')
+        return path.endsWith(".m3u8", ignoreCase = true)
+    }
 
     private fun writeToMediaStore(
         isVideo: Boolean,
@@ -314,24 +325,27 @@ class MediaDownloader(
         } else {
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI
         }
+        // 视频归入 Movies、图片归入 Pictures，避免视频出现在图库的「图片」分类下
+        val relativePath = if (isVideo) "Movies/LinkFetch" else "Pictures/LinkFetch"
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
+            put(MediaStore.MediaColumns.DATE_ADDED, System.currentTimeMillis() / 1000)
             if (size != null) put(MediaStore.MediaColumns.SIZE, size)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/LinkFetch")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
                 put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
         }
         val uri = resolver.insert(collection, values)
             ?: throw IOException("无法在相册中创建文件")
-        var writtenBytes = -1L
+        // 任何异常都在 catch 中删除半成品并重抛，因此走到后面时 writtenBytes 必然已赋值
+        var writtenBytes: Long
         try {
             // 拿不到输出流必须视为失败，避免静默生成 0 字节文件
             val output = resolver.openOutputStream(uri)
                 ?: throw IOException("无法打开文件写入流")
-            val counting = CountingOutputStream(output)
-            counting.use {
+            CountingOutputStream(output).use { counting ->
                 writer(counting)
                 counting.flush()
                 writtenBytes = counting.bytes()
@@ -341,7 +355,7 @@ class MediaDownloader(
             throw e
         }
         val update = ContentValues().apply {
-            if (writtenBytes >= 0) put(MediaStore.MediaColumns.SIZE, writtenBytes)
+            put(MediaStore.MediaColumns.SIZE, writtenBytes)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 put(MediaStore.MediaColumns.IS_PENDING, 0)
             }
@@ -382,11 +396,13 @@ class MediaDownloader(
 
     private fun uniqueName(prefix: String, ext: String): String {
         val safePrefix = prefix.filter { it.isLetterOrDigit() || it == '_' || it == '-' }.take(40).ifBlank { "LinkFetch" }
-        return "${safePrefix}_${System.currentTimeMillis()}_${counter++}.$ext"
+        val seq = counter.getAndIncrement()
+        return "${safePrefix}_${System.currentTimeMillis()}_$seq.$ext"
     }
 
     private companion object {
-        var counter = 0
+        /** 同一毫秒内并发下载时的序号，用原子类型避免重名。 */
+        val counter = java.util.concurrent.atomic.AtomicInteger(0)
     }
 }
 

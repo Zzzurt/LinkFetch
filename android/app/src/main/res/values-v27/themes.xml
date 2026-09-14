@@ -1,14 +1,14 @@
 <resources>
+    <!--
+      API 27（Android 8.1）+ 的浅色主题覆盖：本版本起才支持浅色导航栏图标。
+      深色模式由 values-night 接管（系统资源限定符中 night 的优先级高于 v27），
+      且深色下该属性取默认值 false，无需在此重复声明。
+    -->
     <style name="Theme.LinkFetch" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/window_background</item>
         <item name="android:statusBarColor">@color/window_background</item>
         <item name="android:navigationBarColor">@color/window_background</item>
-        <!-- 浅色模式下使用深色状态栏图标，保证白色背景上清晰可见 -->
         <item name="android:windowLightStatusBar">true</item>
-        <!--
-          windowLightNavigationBar 需要 API 27（Android 8.1），而 minSdk 为 26，
-          因此该属性声明在 values-v27/themes.xml；API 26 上系统不支持浅色导航栏，
-          属性本就会被忽略，此处不写以避免 lint 报 NewApi。
-        -->
+        <item name="android:windowLightNavigationBar">true</item>
     </style>
 </resources>

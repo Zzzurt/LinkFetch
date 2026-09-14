@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 11 及以下（API 30 及以下）的备份规则，语义与 xml/data_extraction_rules.xml 一致：
+  排除 DataStore 目录（含 API Token 与平台 Cookie），保留历史记录库。
+-->
+<full-backup-content>
+    <exclude domain="file" path="datastore/" />
+</full-backup-content>

@@ -24,7 +24,7 @@ class XhsParserTest {
         server.shutdown()
     }
 
-    private fun exploreHtml(noteId: String, state: String) =
+    private fun exploreHtml(state: String) =
         "<html><script>window.__INITIAL_STATE__=$state</script></html>"
 
     private fun redirectTo(path: String) =
@@ -49,7 +49,7 @@ class XhsParserTest {
               ]
             }}},"other":undefined}
         """.trimIndent()
-        server.enqueue(MockResponse().setBody(exploreHtml(noteId, state)))
+        server.enqueue(MockResponse().setBody(exploreHtml(state)))
 
         val result = XhsParser().parse(server.url("/s/AbC").toString())
 
@@ -85,7 +85,7 @@ class XhsParserTest {
               "video":{"consumer":{"originVideoKey":"video_key_456"}}
             }}}}}
         """.trimIndent()
-        server.enqueue(MockResponse().setBody(exploreHtml(noteId, state)))
+        server.enqueue(MockResponse().setBody(exploreHtml(state)))
 
         val result = XhsParser().parse(server.url("/s/De").toString())
 

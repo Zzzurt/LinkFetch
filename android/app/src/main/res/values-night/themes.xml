@@ -3,9 +3,11 @@
         <item name="android:windowBackground">@color/window_background</item>
         <item name="android:statusBarColor">@color/window_background</item>
         <item name="android:navigationBarColor">@color/window_background</item>
-        <!-- 深色模式下使用浅色状态栏/导航栏图标 -->
+        <!-- 深色模式下使用浅色状态栏图标 -->
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:windowLightNavigationBar">false</item>
+        <!--
+          windowLightNavigationBar 需要 API 27，故声明在 values-v27/themes.xml。
+          深色模式下该属性取默认值 false，行为一致。
+        -->
     </style>
 </resources>
-

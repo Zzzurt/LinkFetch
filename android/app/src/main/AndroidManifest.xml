@@ -1,18 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      API 29 起为分区存储，向 MediaStore 写入自身媒体无需权限；
+      但 API 28 及以下（Android 8/9）写入共享存储必须持有该权限，否则 insert 会抛 SecurityException。
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <application
         android:name=".LinkFetchApp"
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.LinkFetch">
+        android:theme="@style/Theme.LinkFetch"
+        tools:ignore="UnusedAttribute">
+        <!--
+          dataExtractionRules 仅 API 31+ 生效、fullBackupContent 覆盖 API 30 及以下，
+          两者并存是有意为之：低版本系统会忽略不认识的属性，这正是官方推荐的兼容写法。
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -25,4 +40,3 @@
     </application>
 
 </manifest>
-

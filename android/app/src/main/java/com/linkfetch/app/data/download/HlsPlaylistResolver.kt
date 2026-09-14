@@ -43,8 +43,17 @@ class HlsPlaylistResolver(
         if (!mediaBody.contains("#EXTINF", ignoreCase = true)) {
             throw HlsException("HLS 播放列表格式异常")
         }
-        if (mediaBody.contains("#EXT-X-KEY:METHOD=AES-128", ignoreCase = true)) {
-            throw HlsException("暂不支持下载加密的 HLS 视频")
+        // 加密检测走属性解析而非字符串匹配：METHOD 可能是 AES-128 / SAMPLE-AES 等，
+        // 冒号后的空白与属性顺序也会变化。漏检的后果是下载出无法播放的加密分片，
+        // 用户侧表现为「下载成功但视频损坏」，比明确报错更糟。
+        val keyMethod = mediaBody.lineSequence()
+            .map { it.trim() }
+            .firstOrNull { it.startsWith("#EXT-X-KEY", ignoreCase = true) }
+            ?.let { line ->
+                Regex("METHOD=([^,\\s]+)", RegexOption.IGNORE_CASE).find(line)?.groupValues?.get(1)
+            }
+        if (keyMethod != null && !keyMethod.equals("NONE", ignoreCase = true)) {
+            throw HlsException("暂不支持下载加密的 HLS 视频（METHOD=$keyMethod）")
         }
         val init = Regex("#EXT-X-MAP:URI=\"([^\"]+)\"", RegexOption.IGNORE_CASE)
             .find(mediaBody)?.groupValues?.get(1)

@@ -1,6 +1,7 @@
 package com.linkfetch.app.data.api
 
 import com.linkfetch.app.data.model.AppSettings
+import java.net.InetAddress
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -18,7 +19,9 @@ class ApiClientTest {
     @Before
     fun setUp() {
         server = MockWebServer()
-        server.start()
+        // 绑定到 127.0.0.1：MockWebServer 默认用「本机主机名」作为 host，
+        // 那个名字既非 loopback 也非私网 IP，会被 ApiClient 的明文守卫拦下。
+        server.start(InetAddress.getByName("127.0.0.1"), 0)
     }
 
     @After
@@ -26,7 +29,14 @@ class ApiClientTest {
         server.shutdown()
     }
 
-    private fun client(settings: AppSettings = AppSettings(baseUrl = server.url("/").toString().trimEnd('/'))) =
+    /**
+     * MockWebServer 的 `url()` 用「本机主机名」作为 host（反查 127.0.0.1 得到），
+     * 那个名字既不是 loopback 也不是私网 IP，会被 ApiClient 的明文守卫拦下，
+     * 因此这里显式用 127.0.0.1 + 端口拼地址。
+     */
+    private fun baseUrl(): String = "http://127.0.0.1:${server.port}"
+
+    private fun client(settings: AppSettings = AppSettings(baseUrl = baseUrl())) =
         ApiClient(settingsProvider = { settings })
 
     @Test
@@ -88,7 +98,7 @@ class ApiClientTest {
                 .setBody("""{"platform":"weibo","title":"t","type":"image","medias":[]}"""),
         )
         val settings = AppSettings(
-            baseUrl = server.url("/").toString().trimEnd('/'),
+            baseUrl = baseUrl(),
             apiToken = "secret-token",
             xhsCookie = "cookie-xhs",
             douyinCookie = "cookie-douyin",
@@ -123,6 +133,43 @@ class ApiClientTest {
         server.shutdown()
 
         val exception = runCatching { client().parse("https://xhslink.com/a/x") }.exceptionOrNull()
+
+        assertTrue(exception is ApiException)
+        assertEquals("network_error", (exception as ApiException).code)
+    }
+
+    @Test
+    fun rejectsCleartextToPublicHost() = runTest {
+        // 凭证不得以明文发往公网地址：必须在发请求之前就拒绝
+        val settings = AppSettings(baseUrl = "http://example.com:8000")
+
+        val exception = runCatching { client(settings).parse("https://xhslink.com/a/x") }.exceptionOrNull()
+
+        assertTrue(exception is ApiException)
+        assertEquals("insecure_transport", (exception as ApiException).code)
+        assertEquals(0, server.requestCount) // 未发出任何请求
+    }
+
+    @Test
+    fun allowsCleartextToPrivateHost() = runTest {
+        // 局域网 / 回环地址允许明文（自建服务的常见部署方式）
+        server.enqueue(
+            MockResponse()
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"status":"ok","service":"linkfetch"}"""),
+        )
+
+        val status = client(AppSettings(baseUrl = baseUrl())).health()
+
+        assertEquals("ok", status)
+    }
+
+    @Test
+    fun allowsHttpsTransport() = runTest {
+        // 守卫只针对明文：https 地址不会被策略拒绝（此处只验证不是 insecure_transport）
+        val exception = runCatching {
+            client(AppSettings(baseUrl = "https://127.0.0.1:1")).health()
+        }.exceptionOrNull()
 
         assertTrue(exception is ApiException)
         assertEquals("network_error", (exception as ApiException).code)

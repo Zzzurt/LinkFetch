@@ -28,9 +28,16 @@ captures/
 # 系统
 .DS_Store
 Thumbs.db
-# 本机签名密钥与 agent 工作记录（不入库）
+# 签名密钥与配置（含口令，绝不入库）
 .keystore/
+keystore.properties
+*.keystore
+*.jks
+# 本机签名密钥与 agent 工作记录（不入库）
 .workbuddy/
 
 # 内部交付记录（仅本地，不公开）
 UI_OPTIMIZATION_DELIVERY.md
+# 内部代码评审记录（含未修复问题细节，修复后再决定是否公开）
+CODE_REVIEW_*.md
+UI_REVIEW_*.md

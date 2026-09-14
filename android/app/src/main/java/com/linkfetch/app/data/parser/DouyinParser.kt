@@ -68,14 +68,30 @@ class DouyinParser(
             attempts += "$base/share/$kind/$contentId/"
             if (kind == "note") attempts += "$base/share/slides/$contentId/"
         }
+
+        // 逐级回退：任何一级失败都只记入诊断，不中断后续路径。
+        // 尤其是 403/429 —— 它只代表「这一级被风控」，而最后一级 WebView 正是为
+        // 「分享页与全部直连接口被风控」准备的兜底；提前抛出会让兜底永远跑不到。
         var lastError: LocalParseException? = null
+        var rateLimited = false
+        val diagnostics = mutableListOf<String>()
+        diagnostics += "cookie=${if (cookie.isNullOrBlank()) "无" else "有"}"
+
+        fun rateLimitedError(): LocalParseException {
+            rateLimited = true
+            return LocalParseException("rate_limited", "抖音触发了风控，请稍后重试")
+        }
+
+        fun note(stage: String, detail: String) {
+            diagnostics += "$stage: $detail"
+        }
+
         for (shareUrl in attempts) {
+            val shortUrl = shareUrl.substringAfter("//").take(64)
             try {
                 val html = client.newCall(Request.Builder().url(shareUrl).headers(headers).build())
                     .execute().use { it ->
-                        if (it.code in listOf(403, 429)) {
-                            throw LocalParseException("rate_limited", "抖音触发了风控，请稍后重试")
-                        }
+                        if (it.code in listOf(403, 429)) throw rateLimitedError()
                         it.body?.string().orEmpty()
                     }
                 val blob = HtmlJsonExtractor.extractJsonObject(html, "window._ROUTER_DATA")
@@ -84,8 +100,10 @@ class DouyinParser(
                 if (item != null) {
                     return@withContext buildResponse(item)
                 }
+                note("分享页", "无作品数据 $shortUrl")
             } catch (e: LocalParseException) {
                 lastError = e
+                note("分享页", "${e.code} $shortUrl")
             }
         }
 
@@ -98,17 +116,17 @@ class DouyinParser(
             val detailUrl = "$pcDetailApi?aweme_id=$contentId"
             val detailRoot = client.newCall(Request.Builder().url(detailUrl).headers(spiderHeaders).build())
                 .execute().use { it ->
-                    if (it.code in listOf(403, 429)) {
-                        throw LocalParseException("rate_limited", "抖音触发了风控，请稍后重试")
-                    }
+                    if (it.code in listOf(403, 429)) throw rateLimitedError()
                     runCatching { json.parseToJsonElement(it.body?.string().orEmpty()) as JsonObject }.getOrNull()
                 }
             val pcDetail = detailRoot?.get("aweme_detail")?.jsonObjectOrNull()
             if (pcDetail != null) {
                 return@withContext buildResponse(pcDetail)
             }
+            note("PC详情", "无 aweme_detail")
         } catch (e: LocalParseException) {
-            throw e
+            lastError = e
+            note("PC详情", e.code)
         }
 
         if (kind == "note") {
@@ -116,16 +134,21 @@ class DouyinParser(
                 return@withContext parseNoteViaSeo(contentId, spiderHeaders)
             } catch (e: LocalParseException) {
                 lastError = e
+                note("SEO页", e.code)
             }
         }
 
         val fallbackRoot = shareBases.firstOrNull()?.let { base ->
             val fallbackUrl = "$base/web/api/v2/aweme/iteminfo/?item_ids=$contentId"
-            client.newCall(Request.Builder().url(fallbackUrl).headers(headers).build()).execute().use { it ->
-                if (it.code in listOf(403, 429)) {
-                    throw LocalParseException("rate_limited", "抖音触发了风控，请稍后重试")
+            try {
+                client.newCall(Request.Builder().url(fallbackUrl).headers(headers).build()).execute().use { it ->
+                    if (it.code in listOf(403, 429)) throw rateLimitedError()
+                    runCatching { json.parseToJsonElement(it.body?.string().orEmpty()) as JsonObject }.getOrNull()
                 }
-                runCatching { json.parseToJsonElement(it.body?.string().orEmpty()) as JsonObject }.getOrNull()
+            } catch (e: LocalParseException) {
+                lastError = e
+                note("iteminfo", e.code)
+                null
             }
         }
         val itemInfo = (fallbackRoot?.get("item_list") as? JsonArray)?.firstOrNull()?.jsonObjectOrNull()
@@ -136,14 +159,18 @@ class DouyinParser(
         // 最终兜底：WebView 加载桌面版详情页（分享页与全部直连接口被风控时）。
         // WebView 是真浏览器引擎，可自动通过 __ac_nonce JS 挑战拿到 ttwid，
         // 页面 SSR 的 __pace_f RSC 流中包含作品数据（camelCase 结构）。
-        if (webViewPageFetcher != null) {
+        if (webViewPageFetcher == null) {
+            note("WebView", "不可用（未注入）")
+        } else {
             val pageUrl = if (kind == "video") {
                 videoPageUrl.format(contentId)
             } else {
                 notePageUrl.format(contentId)
             }
-            val awemeJson = runCatching { webViewPageFetcher?.invoke(pageUrl) }.getOrNull()
-            if (!awemeJson.isNullOrBlank()) {
+            val awemeJson = runCatching { webViewPageFetcher.invoke(pageUrl) }.getOrNull()
+            if (awemeJson.isNullOrBlank()) {
+                note("WebView", "未取到页面数据")
+            } else {
                 val root = runCatching { json.parseToJsonElement(awemeJson) as? JsonObject }.getOrNull()
                 // 兼容两种结构：完整 aweme 包装（{"statusCode":..,"detail":{..}}）或直接就是 detail 对象
                 val detail = root?.get("detail")?.jsonObjectOrNull() ?: root
@@ -152,9 +179,22 @@ class DouyinParser(
                 if (looksLikeDetail) {
                     return@withContext buildResponseFromDetail(detail!!)
                 }
+                note("WebView", "取到数据但结构不符合预期（len=${awemeJson.length}）")
             }
         }
-        throw lastError ?: LocalParseException("parse_failed", "抖音解析失败，作品可能已删除")
+
+        val message = if (rateLimited) {
+            "抖音触发了风控，已依次尝试分享页、详情接口、SEO 页与页面兜底。" +
+                "可在「设置 → 平台 Cookie」填入抖音 Cookie 后重试，或稍后再试。"
+        } else {
+            lastError?.message ?: "抖音解析失败，作品可能已删除"
+        }
+        throw LocalParseException(
+            code = if (rateLimited) "rate_limited" else (lastError?.code ?: "parse_failed"),
+            message = message,
+            // 逐级诊断结果：App 侧提供「复制原始响应」入口，便于定位卡在哪一级
+            rawBody = diagnostics.joinToString("\n"),
+        )
     }
 
     private fun findItem(root: JsonObject): JsonObject? {

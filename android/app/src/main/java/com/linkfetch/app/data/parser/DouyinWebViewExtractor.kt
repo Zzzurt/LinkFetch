@@ -108,6 +108,7 @@ class DouyinWebViewExtractor(private val context: Context) {
                             Log.d(TAG, "pageFinished url=$url")
                             task.pageFinished = true
                         }
+                        @Suppress("OVERRIDE_DEPRECATION")
                         override fun onReceivedError(
                             view: WebView?,
                             errorCode: Int,

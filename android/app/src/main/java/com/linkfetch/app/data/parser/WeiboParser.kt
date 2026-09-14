@@ -65,8 +65,9 @@ class WeiboParser(
             ?: fidRegex.find(url)?.groupValues?.get(1)
 
     private fun buildResponse(data: JsonObject): ParseResponseDto {
-        val title = htmlTagRegex.replace(data["text"]?.stringOrNull().orEmpty(), "").trim().take(100)
-            .ifBlank { "微博正文" }
+        val title = decodeHtmlEntities(
+            htmlTagRegex.replace(data["text"]?.stringOrNull().orEmpty(), ""),
+        ).trim().take(100).ifBlank { "微博正文" }
         val author = data["user"]?.jsonObjectOrNull()?.get("screen_name")?.stringOrNull()
         val medias = mutableListOf<MediaItemDto>()
 
@@ -121,6 +122,20 @@ class WeiboParser(
             medias = medias,
         )
     }
+
+    /**
+     * 微博正文是 HTML 片段，剥掉标签后仍需解码实体，
+     * 否则标题里会残留 `&amp;` / `&quot;` 之类的原始转义。
+     * 注意 &amp; 必须最后替换，避免把 &amp;lt; 二次解码成 "<"。
+     */
+    private fun decodeHtmlEntities(text: String): String = text
+        .replace("&nbsp;", " ")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
 
     private fun headers(cookie: String?): Headers {
         val builder = Headers.Builder()

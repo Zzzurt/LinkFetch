@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+（API 31+）备份规则。
+
+  DataStore 的 Preferences 文件实际位于 filesDir/datastore/linkfetch_settings.preferences_pb，
+  因此归属 file 域（不是 sharedpref），这里整目录排除——它存有后端地址、API Token 与三平台 Cookie。
+
+  历史记录库（Room，database 域）保留在备份内：内容为标题与链接，不含凭证，
+  换机时能一并恢复更符合预期。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="datastore/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="datastore/" />
+    </device-transfer>
+</data-extraction-rules>

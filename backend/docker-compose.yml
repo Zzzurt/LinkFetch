@@ -1,12 +1,18 @@
 services:
   linkfetch-api:
     build: .
+    # 仅绑定回环地址。需要外网访问时请在前面加反向代理并启用 TLS 与限流，
+    # 否则任何能访问该端口的人都能把本服务当作解析代理（可自带 Cookie 代发请求）。
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
+      # 未配置 API_TOKEN 时，服务会拒绝所有解析请求（503）——鉴权策略由应用统一判定。
+      # 本机调试若确实不想配置，显式设 ALLOW_UNAUTHENTICATED=1 承担无鉴权风险。
       - API_TOKEN=${API_TOKEN:-}
+      - ALLOW_UNAUTHENTICATED=${ALLOW_UNAUTHENTICATED:-}
       - XHS_COOKIE=${XHS_COOKIE:-}
       - DOUYIN_COOKIE=${DOUYIN_COOKIE:-}
       - WEIBO_COOKIE=${WEIBO_COOKIE:-}
+      # 默认不开放跨域；确需网页端调用时列出具体来源，逗号分隔
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-}
     restart: unless-stopped
-

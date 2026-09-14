@@ -288,5 +288,81 @@ class DouyinParserTest {
         assertEquals("https://p3-pc.douyinpic.com/cover.jpeg", result.medias[0].cover)
         assertEquals("1080p", result.medias[0].quality)
     }
+
+    /**
+     * 回归用例：403/429 只能代表「这一级被风控」，不得中断整条回退链。
+     *
+     * 曾经的缺陷是 PC 详情接口拿到 403 后直接 `throw e`，导致后面为风控准备的
+     * WebView 兜底永远执行不到，用户只看到「抖音触发了风控，请稍后重试」。
+     */
+    @Test
+    fun rateLimitedStagesDoNotAbortFallbackChain() = runBlocking {
+        val contentId = "7668346756942644842"
+        server.enqueue(
+            MockResponse().setResponseCode(302).addHeader("Location", server.url("/note/$contentId").toString()),
+        )
+        server.enqueue(MockResponse().setBody("redirect target"))
+        // 分享页 ×2 + PC 详情 + SEO ×2 + iteminfo，全部返回风控状态码
+        repeat(8) { server.enqueue(MockResponse().setResponseCode(403)) }
+
+        val awemeJson = """
+            {"statusCode":0,"detail":{
+              "desc":"风控下的兜底","itemTitle":"风控下的兜底",
+              "authorInfo":{"nickname":"兜底作者"},
+              "images":[{"urlList":["https://p3-pc-sign.douyinpic.com/a.jpeg"]}]
+            }}
+        """.trimIndent()
+        var webViewCalled = false
+        val parser = DouyinParser(
+            shareBases = listOf(base),
+            pcDetailApi = "$base/aweme/v1/web/aweme/detail/",
+            noteShareUrl = "$base/share/note/%s/",
+            notePageUrl = "$base/note/%s",
+            webViewPageFetcher = { _ ->
+                webViewCalled = true
+                awemeJson
+            },
+        )
+
+        val result = parser.parse(server.url("/s/iRateLimited/").toString())
+
+        assertTrue("403 不应中断回退链，WebView 兜底必须被执行", webViewCalled)
+        assertEquals("douyin", result.platform)
+        assertEquals("风控下的兜底", result.title)
+        assertEquals("https://p3-pc-sign.douyinpic.com/a.jpeg", result.medias[0].url)
+    }
+
+    /** 全部通道都失败时：给出可执行提示，并带上逐级诊断信息（App 的「复制原始响应」会用到）。 */
+    @Test
+    fun allStagesRateLimitedReportsActionableHintAndDiagnostics() = runBlocking {
+        val contentId = "7668346756942644842"
+        server.enqueue(
+            MockResponse().setResponseCode(302).addHeader("Location", server.url("/note/$contentId").toString()),
+        )
+        server.enqueue(MockResponse().setBody("redirect target"))
+        repeat(8) { server.enqueue(MockResponse().setResponseCode(429)) }
+
+        val parser = DouyinParser(
+            shareBases = listOf(base),
+            pcDetailApi = "$base/aweme/v1/web/aweme/detail/",
+            noteShareUrl = "$base/share/note/%s/",
+            notePageUrl = "$base/note/%s",
+            webViewPageFetcher = null,
+        )
+
+        val exception = runCatching {
+            parser.parse(server.url("/s/iAllBlocked/").toString())
+        }.exceptionOrNull()
+
+        assertTrue(exception is LocalParseException)
+        val parseException = exception as LocalParseException
+        assertEquals("rate_limited", parseException.code)
+        assertTrue("应提示可配置 Cookie：" + parseException.message, parseException.message!!.contains("平台 Cookie"))
+
+        val diagnostics = parseException.rawBody.orEmpty()
+        listOf("分享页", "PC详情", "SEO页", "iteminfo", "WebView").forEach { stage ->
+            assertTrue("诊断信息应包含 $stage 一级：$diagnostics", diagnostics.contains(stage))
+        }
+    }
 }
 

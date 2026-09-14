@@ -3,6 +3,7 @@ package com.linkfetch.app.data.parser
 import com.linkfetch.app.data.model.MediaItemDto
 import com.linkfetch.app.data.model.ParseResponseDto
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -36,6 +37,8 @@ class XParser(
     private val statusRegex = Regex("/(?:i/)?status(?:es)?/(\\d+)")
     private val sizeSuffixRegex = Regex("_(large|thumb|small|medium|orig)(?=\\.(?:jpg|jpeg|png|webp|gif))")
 
+    /** cookie 参数仅为与其它平台解析器保持统一签名：syndication 接口不校验登录态。 */
+    @Suppress("UNUSED_PARAMETER")
     suspend fun parse(url: String, cookie: String? = null): ParseResponseDto = withContext(Dispatchers.IO) {
         val headers = headers()
         var tweetId = statusRegex.find(url)?.groupValues?.get(1)
@@ -226,6 +229,8 @@ class XParser(
         val body = try {
             client.newCall(Request.Builder().url(url).headers(headers()).build())
                 .execute().use { it.body?.string().orEmpty() }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             return null
         }
@@ -327,6 +332,8 @@ class XParser(
             }
             if (body.isBlank()) return null
             json.parseToJsonElement(body) as? JsonObject
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }
