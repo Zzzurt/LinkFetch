@@ -8,29 +8,6 @@ Android 应用：粘贴或自动识别**某书 / 某音 / 某博 / 某推**链�
 
 > ⚠️ 合规说明：去水印下载涉及平台用户协议与内容版权，请合理使用，勿用于批量爬取或对他人内容进行分发牟利。本项目基于 [Apache-2.0](LICENSE) 许可证开源，© 2026 Zzzurt。
 
-## 项目结构
-
-```
-LinkFetch/
-├── backend/                 # Python 解析后端（FastAPI，可选备用模式）
-│   ├── app/
-│   │   ├── main.py          # API 入口：/api/parse、/api/health
-│   │   ├── platform.py      # 域名 -> 平台识别
-│   │   ├── models.py        # 数据模型与统一错误码
-│   │   └── parsers/         # 平台解析器（xhs / douyin / weibo / x）
-│   ├── tests/               # pytest 单元测试（覆盖平台识别 / API / 各解析器）
-│   ├── requirements.txt
-│   ├── Dockerfile
-│   └── docker-compose.yml
-└── android/                 # Android 客户端（Kotlin + Jetpack Compose）
-    └── app/src/
-        ├── main/java/com/linkfetch/app/
-        │   ├── data/parser/  # App 直连解析器（xhs / douyin / weibo / x）+ 页面 JSON 提取、Live 图
-        │   ├── data/         # api 后端 HTTP 客户端、Room 历史、DataStore 设置、download 相册下载
-        │   └── ui/           # 首页 / 解析结果 / 历史 / 设置 + 导航 / 组件 / 主题
-        └── test/             # JVM 单元测试
-```
-
 ## 使用
 
 ### 安装即用（默认，推荐）
