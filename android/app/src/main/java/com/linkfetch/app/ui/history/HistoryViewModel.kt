@@ -34,8 +34,6 @@ class HistoryViewModel(
         private set
     var selectedIds by mutableStateOf<Set<Long>>(emptySet())
         private set
-    var confirmClear by mutableStateOf(false)
-        private set
     var confirmDeleteSelected by mutableStateOf(false)
         private set
     var reParsingId by mutableStateOf<Long?>(null)
@@ -103,19 +101,8 @@ class HistoryViewModel(
         }
     }
 
-    fun requestClear() {
-        if (items.value.isNotEmpty()) confirmClear = true
-    }
-
-    fun handleClearConfirm(clear: Boolean) {
-        confirmClear = false
-        if (clear) {
-            viewModelScope.launch {
-                dao.clear()
-                clearSelection()
-            }
-        }
-    }
+    // 「清空历史」已从界面移除 —— 它与「选择 → 全选 → 删除」是同一条路径，
+    // 保留两套会让用户在多选流程与清空按钮之间反复权衡。删除统一走多选。
 
     fun delete(entity: HistoryEntity) {
         viewModelScope.launch { dao.deleteById(entity.id) }

@@ -48,9 +48,9 @@ class MediaDownloader(
             if (isHlsUrl(item.url)) {
                 return@withContext downloadHls(item, prefix, onProgress)
             }
-            val request = Request.Builder().url(item.url).build()
+            val request = newRequest(item.url)
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+                if (!response.isSuccessful) throw IOException(httpFailureMessage(response.code))
                 val body = response.body ?: throw IOException("响应为空")
                 val total = body.contentLength()
                 val mime = body.contentType()?.toString()?.lowercase()
@@ -148,9 +148,9 @@ class MediaDownloader(
             downloadHlsToTemp(url, target, onProgress)
             return
         }
-        val request = Request.Builder().url(url).build()
+        val request = newRequest(url)
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+            if (!response.isSuccessful) throw IOException(httpFailureMessage(response.code))
             val body = response.body ?: throw IOException("响应为空")
             val total = body.contentLength()
             var written = 0L
@@ -292,9 +292,11 @@ class MediaDownloader(
     }
 
     private fun writeHlsPart(url: String, output: OutputStream) {
-        val request = Request.Builder().url(url).build()
+        val request = newRequest(url)
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("HLS 分段下载失败：HTTP ${response.code}")
+            if (!response.isSuccessful) {
+                throw IOException("HLS 分段下载失败：${httpFailureMessage(response.code)}")
+            }
             val body = response.body ?: throw IOException("HLS 分段响应为空")
             body.byteStream().use { input ->
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
@@ -310,6 +312,63 @@ class MediaDownloader(
     private fun isHlsUrl(url: String): Boolean {
         val path = url.substringBefore('?').substringBefore('#')
         return path.endsWith(".m3u8", ignoreCase = true)
+    }
+
+    /** 带平台请求头的下载请求。 */
+    private fun newRequest(url: String): Request =
+        Request.Builder().url(url).apply {
+            headersFor(url).forEach { (name, value) -> addHeader(name, value) }
+        }.build()
+
+    /**
+     * 按 URL 域名补上平台 Referer 与移动端 UA。
+     *
+     * 为什么需要：解析阶段各 Parser 都带了 UA + Referer，而**下载阶段此前是裸请求**。
+     * 图片 CDN 大多不校验来源，所以"图片能存下来"长期掩盖了这个缺口；视频 CDN 普遍做防盗链，
+     * 缺 Referer 会被直接拒绝（403）—— 这是"图文存得下、视频存不下"最可能的原因。
+     *
+     * 域名匹配不上时返回空 map、保持原来的裸请求行为：不给陌生 CDN 硬套一个不合适的
+     * Referer，免得把本来能下的反而弄坏。
+     */
+    private fun headersFor(url: String): Map<String, String> {
+        val host = runCatching { java.net.URI(url).host?.lowercase() }.getOrNull()
+            ?: return emptyMap()
+        val referer = when {
+            host == "douyin.com" || host.endsWith(".douyin.com") ||
+                host.endsWith(".iesdouyin.com") || host.contains("douyinvod") ||
+                host.contains("douyinpic") || host.contains("douyinstatic") ->
+                "https://www.douyin.com/"
+
+            host == "weibo.com" || host.endsWith(".weibo.com") ||
+                host.endsWith(".weibo.cn") || host.contains("sinaimg") ||
+                host.contains("weibocdn") ->
+                // 与 WeiboParser.headers 保持一致：微博侧的请求走的是 m.weibo.cn，不是 weibo.com
+                "https://m.weibo.cn/"
+
+            host == "xiaohongshu.com" || host.endsWith(".xiaohongshu.com") ||
+                host.contains("xhscdn") || host.contains("xhsimg") ->
+                "https://www.xiaohongshu.com/"
+
+            // X（pbs.twimg.com / video.twimg.com）不校验 Referer，所以不补；
+            // 其余未知域名同理，继续走裸请求。
+            else -> null
+        } ?: return emptyMap()
+        return mapOf("Referer" to referer, "User-Agent" to MOBILE_UA)
+    }
+
+    /**
+     * 把 HTTP 失败码翻译成「用户能据此行动」的提示。
+     *
+     * 403 尤其需要解释清楚：平台的媒体链接大多带**时效签名**，从历史记录打开的作品
+     * （几天前解析的）链接早已过期，表现就是 403。只回一句「HTTP 403」的话，用户完全不知道
+     * 下一步该做什么 —— 而正确答案往往很简单：回首页把这个链接重新解析一次。
+     */
+    private fun httpFailureMessage(code: Int): String = when (code) {
+        403 -> "平台拒绝了下载（403）。媒体链接带时效签名，从历史记录打开的旧作品通常已过期，" +
+            "请回到首页重新解析该链接后再保存。"
+        404 -> "媒体文件不存在（404）。该作品可能已被删除，或链接已失效，建议重新解析。"
+        429 -> "平台限流（429），请等几分钟再试。"
+        else -> "HTTP $code"
     }
 
     private fun writeToMediaStore(
@@ -403,6 +462,10 @@ class MediaDownloader(
     private companion object {
         /** 同一毫秒内并发下载时的序号，用原子类型避免重名。 */
         val counter = java.util.concurrent.atomic.AtomicInteger(0)
+
+        /** 与各 Parser 抓取页面时一致的移动端 UA：部分 CDN 会按 UA 分流 */
+        const val MOBILE_UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) " +
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
     }
 }
 

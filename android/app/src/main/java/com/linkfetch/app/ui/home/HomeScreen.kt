@@ -9,12 +9,9 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -30,13 +27,16 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -49,10 +49,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -64,23 +60,29 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.linkfetch.app.data.AppContainer
+import com.linkfetch.app.data.db.HistoryEntity
+import com.linkfetch.app.ui.components.CoverPlaceholder
 import com.linkfetch.app.ui.components.ErrorCard
 import com.linkfetch.app.ui.components.GroupCard
 import com.linkfetch.app.ui.components.LoadingButton
+import com.linkfetch.app.ui.components.PlatformDot
 import com.linkfetch.app.ui.components.PlatformBadge
 import com.linkfetch.app.ui.components.ScreenFadeIn
+import com.linkfetch.app.ui.components.SectionHeader
 import com.linkfetch.app.ui.components.ShimmerBox
+import com.linkfetch.app.ui.components.ShimmerImage
+import com.linkfetch.app.ui.components.TintedPanel
 import com.linkfetch.app.ui.components.VerticalSpace
+import com.linkfetch.app.ui.components.errorAdvice
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
-import com.linkfetch.app.ui.theme.SuccessGreen
+import com.linkfetch.app.ui.theme.TextColors
 import com.linkfetch.app.ui.theme.WarningAmber
-import com.linkfetch.app.ui.theme.platformAccent
 import com.linkfetch.app.util.Platform
+import com.linkfetch.app.util.formatHistoryTime
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HomeScreen(
     container: AppContainer,
@@ -102,8 +104,7 @@ fun HomeScreen(
     )
     val context = LocalContext.current
     val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
-    val onboardingDone by container.settingsRepository.onboardingDone
-        .collectAsStateWithLifecycle(initialValue = false)
+    val recent by viewModel.recentItems.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -141,119 +142,57 @@ fun HomeScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.screen, vertical = Spacing.lg),
         ) {
-            // 品牌头部：品牌蓝渐变打底 + 四角平台色光晕（C3+）。
-            // 蓝底压住亮度，白字对比度不依赖整卡深色遮罩；光晕浓度浅色 0.72/0.62/0.55/0.72，
-            // 深色整体降约 30%（X 黑换中灰 #6B7280 后保持 0.70 才可见）。
-            // 光晕用 drawBehind 画在背景层：Box 会测量子节点（含 align 定位的）撑高卡片，
-            // 之前的 240dp 光晕子节点把 Hero 撑到 240dp 高，文字只占上部 1/4，下方大片留白。
-            val heroDark = isSystemInDarkTheme()
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(1.dp, Radii.card)
-                    .clip(Radii.card)
-                    .background(
-                        Brush.linearGradient(
-                            if (heroDark) {
-                                listOf(Color(0xFF1E3A8A), Color(0xFF1D4ED8))
-                            } else {
-                                listOf(Color(0xFF2563EB), Color(0xFF3B82F6))
-                            },
-                        ),
-                    )
-                    .drawBehind {
-                        // 四角光晕：blob 圆心落在卡片角上，向卡片内扩散后自然渐隐
-                        val haloRadius = 120.dp.toPx()
-                        listOf(
-                            Offset(0f, 0f) to (Platform.XHS to if (heroDark) 0.52f else 0.72f),
-                            Offset(size.width, 0f) to (Platform.WEIBO to if (heroDark) 0.44f else 0.62f),
-                            Offset(0f, size.height) to (Platform.DOUYIN to if (heroDark) 0.38f else 0.55f),
-                            Offset(size.width, size.height) to (Platform.X to if (heroDark) 0.70f else 0.72f),
-                        ).forEach { (center, spec) ->
-                            val accent = platformAccent(spec.first, heroDark)
-                            drawCircle(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(accent.copy(alpha = spec.second), Color.Transparent),
-                                    center = center,
-                                    radius = haloRadius,
-                                ),
-                                radius = haloRadius,
-                                center = center,
-                            )
-                        }
-                    },
+            // 品牌条（v1.8）：从「大 Hero 渐变横幅」压缩为一行的品牌锚点。
+            //
+            // 之前的 Hero 是一整块蓝色渐变卡（40dp+ 高），把首屏近四分之一的高度让给了
+            // 装饰，而这一屏真正的动作在输入区 —— 大色块与「过路式工具」的定位不符。
+            // 压缩后：logo + 名称一行收起品牌身份，右侧补上「直达设置」的入口。
+            // 品牌蓝只出现在这块 logo 里（以及下方主按钮），大面积的填充色让位给中性底。
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                // 单行横排：mark + 标题 + 平台列表同行，Hero 高度压到横幅级别
-                // （原先 mark 44dp + 两行文字竖排，整体近 80dp，占屏偏高）
-                Row(
-                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm),
-                    verticalAlignment = Alignment.CenterVertically,
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(Radii.card)
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    // 品牌标：白底 + 蓝链图标。蓝渐变方块叠在蓝底 Hero 上会隐形，故改为白底。
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(Radii.card)
-                            .background(Color.White),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Filled.Link,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                    Spacer(Modifier.width(Spacing.md))
-                    Text(
-                        text = "链取",
-                        // 与历史/设置页的页标题同为 titleLarge，避免切页时标题大小跳动
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                    Icon(
+                        Icons.Filled.Link,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(18.dp),
                     )
-                    Spacer(Modifier.width(Spacing.md))
-                    Text(
-                        // 副标题承载平台列表（产品价值句由引导条「复制链接→解析→保存」承担）
-                        text = "小红书 · 抖音 · 微博 · X",
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.85f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                }
+                Spacer(Modifier.width(Spacing.md))
+                Text(
+                    text = "链取",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        Icons.Filled.Settings,
+                        contentDescription = "设置",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
-            // 区块间距用 24dp、组内用 8/12dp：间距有了对比，界面才有"重点"，
-            // 否则整页都是均匀的 16dp，看起来就是一片平铺。
+            VerticalSpace(12)
+            // 价值主张：整屏唯一的说明性大标题，聚焦「做什么」。
+            // 不再写平台名 —— 「支持哪些平台」收敛到输入区的彩点行（见下），一处说一遍。
+            Text(
+                text = "粘贴链接，直取原图原视频",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            // 区块间距：lead 与下方输入工作台之间用 24dp，拉开「说明」与「动作」两组内容
             VerticalSpace(24)
 
-            // 新手引导：一行可关闭提示条
-            AnimatedVisibility(visible = !onboardingDone) {
-                Column {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(MaterialTheme.shapes.extraLarge)
-                            .background(MaterialTheme.colorScheme.primaryContainer)
-                            .padding(start = Spacing.lg, end = Spacing.xs, top = Spacing.xs, bottom = Spacing.xs),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "复制平台链接 → 打开即解析 → 一键保存到相册",
-                            modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                        TextButton(onClick = { scope.launch { container.settingsRepository.markOnboardingDone() } }) {
-                            Text("知道了")
-                        }
-                    }
-                    VerticalSpace(12)
-                }
-            }
-    
-            // 剪贴板检测横幅：滑入滑出 + 10s 自动收起
+    // 剪贴板检测横幅：滑入滑出 + 10s 自动收起
             AnimatedVisibility(
                 visible = viewModel.clipboardUrl != null,
                 enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
@@ -261,7 +200,6 @@ fun HomeScreen(
             ) {
                 val url = viewModel.clipboardUrl ?: return@AnimatedVisibility
                 val platform = Platform.fromUrl(url)
-                val isDark = isSystemInDarkTheme()
                 Column {
                     Row(
                         modifier = Modifier
@@ -273,14 +211,10 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (platform != null) {
-                            Box(
-                                modifier = Modifier
-                                    .width(4.dp)
-                                    .height(36.dp)
-                                    .clip(Radii.pill)
-                                    .background(platformAccent(platform, isDark)),
-                            )
-                            Spacer(Modifier.width(Spacing.sm))
+                            // 原先这里还有一条 4dp 的平台色竖条。移除原因：横幅里已经用
+                            // PlatformBadge 表达了平台身份，色条是同一件事的第二次表达；
+                            // 而平台色的职责被限定为「标识身份」（小面积徽标，配 onPlatform()
+                            // 做前景自适应），拿它当装饰条会再次破例 —— 与 Hero 四色光晕同类。
                             PlatformBadge(platform, size = 28)
                             Spacer(Modifier.width(Spacing.sm))
                         } else {
@@ -307,13 +241,25 @@ fun HomeScreen(
                 }
             }
     
-            // Hero 输入卡：输入 + 解析一体
-            GroupCard {
+            // 输入工作台（v1.8）：从「描边卡片」改为「淡层面板」。
+            // - 面板本身无描边无阴影（TintedPanel），层次由「白底输入块浮在淡层上」表达；
+            // - 输入框去掉描边与下划线，只剩一块白底，视觉从「一个输入控件」变成「一张工作台」；
+            // - 平台支持信息以一行彩点形态放在这里 —— 全页只此一处说「支持哪些平台」。
+            TintedPanel {
                 OutlinedTextField(
                     value = viewModel.input,
                     onValueChange = viewModel::onInputChange,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = MaterialTheme.shapes.large,
+                    shape = Radii.field,
+                    // 淡层上放白底输入块：输入框容器改为 surface（白），指示线全部透明，
+                    // 只保留 label / placeholder / 清除与粘贴图标的功能。
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = Color.Transparent,
+                        unfocusedBorderColor = Color.Transparent,
+                        disabledBorderColor = Color.Transparent,
+                    ),
                     label = { Text("链接") },
                     placeholder = { Text("粘贴链接或整段分享文案") },
                     minLines = 2,
@@ -349,15 +295,22 @@ fun HomeScreen(
                     },
                 )
                 VerticalSpace(12)
-                LoadingButton(
-                    // 原名「解析并保存」名实不符：此按钮只解析并写入一条历史记录，
-                    // 媒体写入相册发生在结果页（「全部保存」）。统一术语：解析 / 保存 / 记录。
-                    text = if (viewModel.parsing) "解析中…" else "开始解析",
-                    loading = viewModel.parsing,
-                    onClick = viewModel::parse,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = viewModel.input.isNotBlank(),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // 平台彩点行：用最轻的形式交代「支持哪些平台」，不占用标题层级
+                    Platform.values().forEach { platform ->
+                        PlatformDot(
+                            platform = platform,
+                            modifier = Modifier.padding(end = Spacing.sm),
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    LoadingButton(
+                        text = if (viewModel.parsing) "解析中…" else "解析",
+                        loading = viewModel.parsing,
+                        onClick = viewModel::parse,
+                        enabled = viewModel.input.isNotBlank(),
+                    )
+                }
             }
     
             // 解析中：结果骨架卡
@@ -366,78 +319,94 @@ fun HomeScreen(
                 ResultSkeletonCard()
             }
     
-            viewModel.error?.let {
+            viewModel.error?.let { message ->
                 VerticalSpace(12)
-                ErrorCard(it)
+                ErrorCard(
+                    message = message,
+                    // 下一步建议按错误码裁决，避免与 message 里已有的指引重复（详见 errorAdvice）
+                    suggestion = errorAdvice(viewModel.errorCode),
+                )
                 viewModel.diagnosticBody?.let { body ->
                     TextButton(
                         onClick = {
                             val clipboard = context.getSystemService(ClipboardManager::class.java)
-                            clipboard?.setPrimaryClip(ClipData.newPlainText("X 原始响应", body))
+                            // label 不再写死 "X 原始响应"：这份诊断体对抖音等平台同样适用
+                            // （它是逐级回退链的失败记录），写死平台名会误导。
+                            clipboard?.setPrimaryClip(ClipData.newPlainText("解析诊断信息", body))
                             scope.launch {
-                                snackbarHostState.showSnackbar("原始响应已复制，请发给开发者排查")
+                                snackbarHostState.showSnackbar("诊断信息已复制，反馈时可附上")
                             }
                         },
                     ) {
-                        Text("复制原始响应")
+                        Text("复制诊断信息")
                     }
                 }
             }
     
-            // 操作区 → 状态/说明区：同样 24dp，和上一组的区块间距保持一致
+            // 最近记录：给首页一个「回来继续」的落点。
+            // 关掉引导条之后首页原本只剩输入卡一块内容，下面整屏空着；功能上也没给二次进入
+            // 的理由 —— 想再取一次上一条内容得先切到历史页。这里摆上最近 3 条（与历史页同一份
+            // 数据源），点一下直接回到结果页。封面缩略图本身也是这屏唯一的"实物"，比任何
+            // 装饰都更能把版面填满。
+            if (recent.isNotEmpty()) {
+                VerticalSpace(24)
+                SectionHeader(title = "最近记录", count = recent.size)
+                Spacer(Modifier.height(Spacing.md))
+                Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+                    recent.forEach { entity ->
+                        RecentRecordRow(
+                            entity = entity,
+                            onClick = {
+                                if (viewModel.open(entity)) onOpenResult()
+                            },
+                        )
+                    }
+                }
+            }
+
+            // 页脚：把「解析方式状态行（仅 server）+ 平台徽标 + 底部说明」收进同一个语义块。
+            //
+            // 这三段此前各自独立平铺，间距虽然都落在体系内（区块 24 / 组内 8），但缺少
+            // "它们是一组"的信号 —— 读起来是三条并列的说明，把页面下方铺成一片均匀的辅助信息。
+            // 收进一个 Column 后组内统一 12dp、与上方内容保持 24dp，层级从"堆叠"变成"内容 + 页脚"。
+            // 页脚不承担任何操作，所以整块保持次级文字权重，不加卡片、不加分隔线。
             VerticalSpace(24)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val direct = settings.parseMode == "direct"
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .clip(CircleShape)
-                        // 用语义 token 而不是内联色值：值相同，但改主题时不会再漏掉这里
-                        .background(if (direct) SuccessGreen else WarningAmber),
-                )
-                Spacer(Modifier.width(6.dp))
+            Column {
+                // 解析方式只在「自建服务器」模式下提示。
+                // 直连是默认且推荐的方式，常驻显示「App 直连（无需服务器）」对绝大多数用户是
+                // 零信息量；而一旦切到服务器模式，用户就需要知道请求走的是哪个地址（失败排查
+                // 全靠它）。所以这是一个「只在非默认状态出现」的状态条，而不是常驻信息。
+                if (settings.parseMode == "server") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                // 用语义 token 而不是内联色值：值相同，但改主题时不会再漏掉这里
+                                .background(WarningAmber),
+                        )
+                        Spacer(Modifier.width(Spacing.sm))
+                        Text(
+                            text = "解析服务：${settings.baseUrl}",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                        )
+                        TextButton(onClick = onOpenSettings) {
+                            Text("修改")
+                        }
+                    }
+                    VerticalSpace(12)
+                }
+                // 平台徽标行已移除：『支持哪些平台』收敛到输入工作台的彩点行，
+                // 页脚只留一句使用说明，缩短首屏下方的"信息尾巴"。
                 Text(
-                    text = if (direct) {
-                        "解析方式：App 直连（无需服务器）"
-                    } else {
-                        "解析服务：${settings.baseUrl}"
-                    },
-                    modifier = Modifier.weight(1f),
+                    text = "打开 App 时自动识别剪贴板中的链接，点击即可解析。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
                 )
-                TextButton(onClick = onOpenSettings) {
-                    Text("修改")
-                }
             }
-    
-            VerticalSpace(8)
-            // 不再单列「支持平台」小标题：一行徽标 + 平台名本身已经说明含义，
-            // 省掉一档标题可以缩短首屏下方的"信息尾巴"
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.lg),
-                // 本版 foundation 的 FlowRow 没有 verticalArrangement 参数，
-                // 换行后的行间距由子项自身的纵向 padding 提供（否则两行会贴死）
-            ) {
-                Platform.values().forEach { platform ->
-                    Row(
-                        modifier = Modifier.padding(vertical = Spacing.xs),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        PlatformBadge(platform, size = 24)
-                        Spacer(Modifier.width(6.dp))
-                        Text(platform.label, style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-            VerticalSpace(8)
-            Text(
-                text = "打开 App 时自动识别剪贴板中的链接，点击即可解析。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
 
         SnackbarHost(
@@ -456,7 +425,7 @@ private fun ResultSkeletonCard() {
             Spacer(Modifier.width(Spacing.md))
             Column(modifier = Modifier.weight(1f)) {
                 ShimmerBox(modifier = Modifier.fillMaxWidth(0.7f).height(16.dp))
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(Spacing.sm))
                 ShimmerBox(modifier = Modifier.fillMaxWidth(0.4f).height(12.dp))
             }
         }
@@ -465,5 +434,76 @@ private fun ResultSkeletonCard() {
             ShimmerBox(modifier = Modifier.weight(1f).aspectRatio(1f), shape = MaterialTheme.shapes.medium)
             ShimmerBox(modifier = Modifier.weight(1f).aspectRatio(1f), shape = MaterialTheme.shapes.medium)
         }
+    }
+}
+
+/**
+ * 首页「最近记录」的一行。
+ *
+ * 刻意不用卡片，也不加背景：首页上方已经有一张动作卡，再叠三张同形状的盒子会把整页
+ * 变成一摞矩形，而这一屏最缺的恰恰是"实物"。这里靠 48dp 封面缩略图提供视觉密度，
+ * 结构交给留白与右侧箭头，点击反馈交给波纹。
+ */
+@Composable
+private fun RecentRecordRow(
+    entity: HistoryEntity,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val platform = Platform.fromKey(entity.platform)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(Radii.field)
+            .clickable(onClickLabel = "打开结果页", onClick = onClick)
+            .padding(Spacing.sm),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(Radii.small),
+        ) {
+            if (entity.coverUrl != null) {
+                ShimmerImage(
+                    model = entity.coverUrl,
+                    modifier = Modifier.fillMaxSize(),
+                    shape = Radii.small,
+                    onError = { CoverPlaceholder(platform, badgeSize = 22) },
+                )
+            } else {
+                // 无封面：可能是平台没给封面，也可能是封面字段存的是视频地址
+                // （见 HomeViewModel.saveHistory 的封面选取）—— 两种情况都走同一个占位
+                CoverPlaceholder(platform, badgeSize = 22)
+            }
+        }
+        Spacer(Modifier.width(Spacing.md))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = entity.title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(Spacing.xs))
+            Text(
+                text = buildString {
+                    platform?.let { append(it.label).append(" · ") }
+                    append(formatHistoryTime(entity.createdAt))
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = TextColors.muted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(Spacing.sm))
+        Icon(
+            Icons.Filled.ChevronRight,
+            contentDescription = null,
+            tint = TextColors.muted,
+            modifier = Modifier.size(20.dp),
+        )
     }
 }

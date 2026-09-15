@@ -45,7 +45,6 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -89,10 +88,10 @@ import com.linkfetch.app.data.model.MediaItemDto
 import com.linkfetch.app.data.model.ParseResponseDto
 import com.linkfetch.app.ui.components.ErrorCard
 import com.linkfetch.app.ui.components.LoadingButton
-import com.linkfetch.app.ui.components.PlatformBadge
+import com.linkfetch.app.ui.components.PlatformDot
 import com.linkfetch.app.ui.components.ScreenFadeIn
+import com.linkfetch.app.ui.components.SectionHeader
 import com.linkfetch.app.ui.components.ShimmerImage
-import com.linkfetch.app.ui.components.TypeTag
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.TabularNums
@@ -195,22 +194,45 @@ fun ResultScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("解析结果") },
+                // 显式 Bold：另外三页的 PageHeader 是 Bold，而 Typography.titleLarge 是
+                // SemiBold —— 不写这一句，结果页的标题会比别的页细一档。
+                title = { Text("解析结果", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                // 复制原链接从信息头挪到 TopAppBar：它是页面级动作（对整条结果生效），
+                // 不是标题的附属。留在信息头行内还有个副作用 —— IconButton 的最小触控目标是
+                // 48dp，会把那一整行撑到 48dp 高，信息头就压不下去。
+                actions = {
+                    IconButton(onClick = onCopyOriginalUrl) {
+                        Icon(
+                            Icons.Filled.Link,
+                            contentDescription = "复制原链接",
+                            modifier = Modifier.size(20.dp),
+                        )
                     }
                 },
             )
         },
         bottomBar = {
             if (result != null) {
-                DownloadBottomBar(
-                    downloaded = downloadedCount,
-                    total = total,
-                    downloading = viewModel.downloading,
-                    failedCount = failedCount,
-                    onDownloadAll = {
+                // v1.8：保存条改为「悬浮胶囊」—— 外边距 + 圆角，不再贴满底边。
+                // 「保存」是结果页的主动作但不是常驻状态，浮起来比压底更轻；
+                // 上下留 8dp、左右留 16dp，内容网格滚动时能观察到胶囊浮在上层。
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    DownloadBottomBar(
+                        downloaded = downloadedCount,
+                        total = total,
+                        downloading = viewModel.downloading,
+                        failedCount = failedCount,
+                        onDownloadAll = {
                         when {
                             needsLegacyStoragePermission ->
                                 legacyStorageLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
@@ -220,7 +242,8 @@ fun ResultScreen(
                         }
                     },
                     onRetryFailed = viewModel::retryFailed,
-                )
+                    )
+                }
             }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -234,7 +257,6 @@ fun ResultScreen(
                 onDownloadOne = viewModel::downloadOne,
                 onLiveChoice = { liveChoiceIndex = it },
                 onPreview = { previewIndex = it },
-                onCopyLink = onCopyOriginalUrl,
                 modifier = Modifier
                     .padding(padding)
                     .fillMaxSize(),
@@ -293,7 +315,10 @@ private fun DownloadBottomBar(
     // 去掉后少一层噪音，底部条也矮 8dp。
     val collapsed = !downloading && downloaded == 0 && failedCount == 0
     Surface(
+        // v1.8：胶囊圆角 + 更强投影，与外侧 Box 的留白配合成「悬浮操作条」
+        shape = Radii.card,
         tonalElevation = 3.dp,
+        shadowElevation = 4.dp,
         color = MaterialTheme.colorScheme.surface,
     ) {
         Column(
@@ -356,7 +381,7 @@ private fun DownloadBottomBar(
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                     )
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(Spacing.sm))
                     Text("重试失败（$failedCount）")
                 }
             }
@@ -382,7 +407,7 @@ private fun DownloadProgress(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(16.dp),
                 )
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(Spacing.sm))
             }
             Text(
                 text = if (allDone) "已全部保存到相册" else "已保存 $downloaded / $total",
@@ -394,7 +419,7 @@ private fun DownloadProgress(
                 },
             )
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(Spacing.sm))
         LinearProgressIndicator(
             progress = fraction,
             modifier = Modifier
@@ -437,14 +462,18 @@ private fun ResultContent(
     onDownloadOne: (Int) -> Unit,
     onLiveChoice: (Int) -> Unit,
     onPreview: (Int) -> Unit,
-    onCopyLink: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val platform = Platform.fromKey(result.platform)
     // medias 中视频与图片可能交错（例如 X 平台按 mediaDetails 原始顺序返回），
     // 不能用 videos.size + i 反推下标，否则会把保存/预览指向错误的条目。
+    //
+    // 视频与图片各自按 kind 分组渲染（视频在前、图片在后），两组都持有 medias 的原始下标。
+    // 这里必须遍历**全部**视频：此前只取 videos.firstOrNull()，而图片那组又把所有 video
+    // 都过滤掉，于是 medias 里第 2 个及以后的视频既不在视频区、也不进网格 —— 界面上完全
+    // 不可见（底部「全部保存」仍会下载它们，所以数据不丢，但用户只会以为少了几张）。
+    val videoIndices = result.medias.indices.filter { result.medias[it].isVideo }
     val imageMediaIndices = result.medias.indices.filter { !result.medias[it].isVideo }
-    val video = result.videos.firstOrNull()
 
     // 首帧入场：让网格逐项错峰淡入，避免一整页"啪"地出现。
     // entrance 置 true 后不再变，滚动新增的 item 直接显示、不重复动画。
@@ -473,27 +502,45 @@ private fun ResultContent(
         ) {
             item(key = "header", span = { GridItemSpan(maxLineSpan) }) {
                 Column(modifier = Modifier.padding(horizontal = textPadding)) {
+                    // 信息头：从 5 个元素压到 2 行（徽标 + 标题 + 元信息），约 93dp → 63dp。
+                    // 三处变更及理由：
+                    //  1. 标题 headlineSmall(20sp) → titleMedium(16sp)，maxLines 2 → 1。
+                    //     这一行是「扫一眼确认是不是我要的那条」，不是阅读区 —— 降档后不再与
+                    //     页标题(22sp)、底部条文案(15sp)抢层级，行数收敛也让信息头能真正变矮。
+                    //     完整标题在历史页与原平台都能看到，不必在这里全展开。
+                    //  2. TypeTag 退场。结果页里类型标签是冗余的：下面就是 9:16 播放器与图片网格，
+                    //     用户看得见内容是什么。它的价值在历史页列表（那里没有预览），所以只从这一页移除。
+                    //     类型信息并入元信息行（「12 图 · 1 视频」），数据没丢、行数没增。
+                    //  3. 复制原链接移到 TopAppBar actions（见上方注释）。
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        platform?.let { PlatformBadge(it, size = 32) }
-                        Spacer(Modifier.width(10.dp))
+                        // v1.8：身份标识从 28dp 徽标换成 8dp 平台彩点，
+                        // 「这是哪个平台」还在，但不再与标题抢视觉重量
+                        platform?.let {
+                            PlatformDot(it)
+                            Spacer(Modifier.width(Spacing.sm))
+                        }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = result.title,
-                                // 内容标题要压得住副标题与底部条文案(labelLarge 15sp)；
-                                // 此前用的是 titleMedium 16sp，跟底部条几乎同级
-                                style = MaterialTheme.typography.headlineSmall,
-                                maxLines = 2,
+                                // 标题正文化：titleMedium → bodyLarge 半粗，
+                                // 和页标题(22sp)拉开后，这一行更接近「内容」而不是「标题」
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
-                            // 平台名补进副标题：原先只有一个色块+单字徽标，
-                            // 对色觉障碍或陌生品牌色来说几乎没有信息量
-                            val subtitle = listOfNotNull(
-                                platform?.label,
-                                result.author?.let { "@$it" },
-                            ).joinToString(" · ")
-                            if (subtitle.isNotEmpty()) {
+                            // 元信息行同时承担三件事：平台身份（不能只靠色块 —— 对色觉障碍或
+                            // 陌生品牌色来说几乎没有信息量）、作者、媒体构成。
+                            // 数量用实际参与渲染的条目数，与下方视频区/网格保持一致。
+                            val meta = buildList {
+                                platform?.let { add(it.label) }
+                                result.author?.let { add("@$it") }
+                                if (imageMediaIndices.isNotEmpty()) add("${imageMediaIndices.size} 图")
+                                if (videoIndices.isNotEmpty()) add("${videoIndices.size} 视频")
+                            }.joinToString(" · ")
+                            if (meta.isNotEmpty()) {
                                 Text(
-                                    text = subtitle,
+                                    text = meta,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
@@ -501,26 +548,18 @@ private fun ResultContent(
                                 )
                             }
                         }
-                        TypeTag(result.type)
-                        IconButton(onClick = onCopyLink) {
-                            Icon(
-                                Icons.Filled.Link,
-                                contentDescription = "复制原链接",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
                     }
-                    Spacer(Modifier.height(Spacing.sm))
-                    // 细线分隔「作品信息」与「媒体内容」，补上结果页缺失的层级
-                    // 注：material3 1.1.0 里这个组件还叫 Divider（1.2 起才改名 HorizontalDivider）
-                    Divider(color = MaterialTheme.colorScheme.outlineVariant)
-                    Spacer(Modifier.height(Spacing.md))
+                    // v1.8：取消信息头与媒体内容之间的满宽分隔线，改用留白分组 ——
+                    // 线上方是「这是一条什么内容」，线下方是「可浏览的媒体本体」，
+                    // 16dp 的留白足够分界，不需要再画一条贯穿整页的横线。
+                    Spacer(Modifier.height(Spacing.lg))
                 }
             }
 
-            if (video != null) {
-                item(key = "video", span = { GridItemSpan(maxLineSpan) }) {
+            // 每个视频各占一个通栏 item。单视频（绝大多数情况）观感与之前完全一致；
+            // 多视频时纵向依次排开，每个都能播放，不再有被默默吞掉的视频。
+            videoIndices.forEach { mediaIndex ->
+                item(key = "video-$mediaIndex", span = { GridItemSpan(maxLineSpan) }) {
                     Column(modifier = Modifier.padding(horizontal = textPadding)) {
                         // 限高必须放在「容器」上、内容用 fillMaxHeight 撑满高度。
                         // 不能写成 Modifier.aspectRatio(...).heightIn(max=380) —— AspectRatioModifier 是按
@@ -532,14 +571,36 @@ private fun ResultContent(
                                 .heightIn(max = 380.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            VideoPlayerView(
-                                url = video.url,
+                            // 内层再包一个「与视频等宽等高」的 Box：动作位需要一个精确贴在视频上的
+                            // 定位容器。直接把动作位放进外层，它会贴到那个 `fillMaxWidth` 的限高容器
+                            // 右上角 —— 宽屏下视频居中、容器更宽，按钮就会飘到视频外面去。
+                            Box(
                                 modifier = Modifier
                                     .fillMaxHeight()
-                                    .aspectRatio(9f / 16f)
-                                    .clip(Radii.card)
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                            )
+                                    .aspectRatio(9f / 16f),
+                            ) {
+                                VideoPlayerView(
+                                    url = result.medias[mediaIndex].url,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(Radii.card)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                )
+                                // 单个视频的保存入口。此前视频区**没有任何保存按钮** ——
+                                // 用户想只留这段视频，只能点底部「全部保存」把图文一并存下来。
+                                // 位置取右上角（而图片是右下角）：ExoPlayer 的控制条在底部，
+                                // 右下角会在控制条出现时被盖住、点不到。
+                                MediaSaveAction(
+                                    state = itemStates[mediaIndex] ?: ItemState.Idle,
+                                    downloading = downloading,
+                                    live = false,
+                                    labelBase = "视频",
+                                    onDownload = { onDownloadOne(mediaIndex) },
+                                    // 视频不可能是 Live 图，live 恒为 false，此回调不会被调用
+                                    onLiveChoice = {},
+                                    align = Alignment.TopEnd,
+                                )
+                            }
                         }
                         Spacer(Modifier.height(Spacing.lg))
                     }
@@ -551,13 +612,31 @@ private fun ResultContent(
                 // 通栏判定只在这里算一次，span 与宽高比共用，避免两处条件不一致。
                 val lastFullWidthPosition =
                     if (imageMediaIndices.size % 2 == 1) imageMediaIndices.size - 1 else -1
-                item(key = "images-header", span = { GridItemSpan(maxLineSpan) }) {
-                    Text(
-                        text = "图片（${result.images.size}）· 点击图片可全屏预览",
-                        modifier = Modifier.padding(horizontal = textPadding),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                // 图片区标题只在「页面里同时存在视频」时才出现：此时它承担的是分组
+                //（视频组 / 图片组），而不是"下面是一组图片"这种用户一眼就能看出来的信息。
+                //
+                // 纯图片作品不再显示这个标题 —— 顶部信息头已经写了「N 图」，网格本身也说明了
+                // 它是图片，再补一个「图片 N」就是同一件事的第三次表达；而且它会在信息头与内容
+                // 之间多插进一层「标签 + 引线」，和上面那条满宽分隔线挤在一起，整块显得碎。
+                // 数量同理只由信息头说一次，所以这里不再传 count。
+                //
+                // ⚠️ 标题的显示条件必须与网格的渲染条件**分开判断**：两者原来共用同一个
+                // `imageMediaIndices.isNotEmpty()`，若直接把它改成「且存在视频」，
+                // 纯图片作品的整个网格都会消失。
+                if (videoIndices.isNotEmpty()) {
+                    item(key = "images-header", span = { GridItemSpan(maxLineSpan) }) {
+                        SectionHeader(
+                            title = "图片",
+                            // 水平边距仍走 textPadding，与上方作品标题对齐
+                            // （网格本身是几乎贴边的，这两套边距不能混用）。
+                            modifier = Modifier.padding(
+                                start = textPadding,
+                                end = textPadding,
+                                top = Spacing.lg,
+                                bottom = Spacing.md,
+                            ),
+                        )
+                    }
                 }
                 itemsIndexed(
                     items = imageMediaIndices,
@@ -585,6 +664,7 @@ private fun ResultContent(
                         index = mediaIndex,
                         state = itemStates[mediaIndex] ?: ItemState.Idle,
                         downloading = downloading,
+                        platform = platform,
                         onDownload = { onDownloadOne(mediaIndex) },
                         onLiveChoice = { onLiveChoice(mediaIndex) },
                         // imagePosition 即该图在 result.images 中的位置，供全屏预览定位
@@ -616,7 +696,7 @@ private fun ResultContent(
 /**
  * 结果页图片单元。
  *
- * 「相册式」排版：容器透明（不铺卡片底），圆角只留 [Radii.thumbnail]，
+ * 「相册式」排版：容器透明（不铺卡片底），圆角只留 [Radii.grid]，
  * 配合网格的 2dp 间隙让整组图片连成一片 —— 内容本身即版式，而不是被装进一个个卡片里。
  */
 @Composable
@@ -625,6 +705,7 @@ private fun MediaCard(
     index: Int,
     state: ItemState,
     downloading: Boolean,
+    platform: Platform?,
     onDownload: () -> Unit,
     onLiveChoice: () -> Unit,
     onClick: () -> Unit,
@@ -636,165 +717,199 @@ private fun MediaCard(
             model = item.url,
             modifier = Modifier
                 .fillMaxSize()
-                .clip(Radii.thumbnail)
+                .clip(Radii.grid)
                 // 读屏用户否则既听不到"这是一张图"，也不知道点击会做什么
                 .clickable(onClickLabel = "全屏预览", onClick = onClick),
-            shape = Radii.thumbnail,
+            shape = Radii.grid,
             contentDescription = "第 ${index + 1} 张图片",
         )
             if (item.live) {
-                Box(
+                // v1.8：Live 徽章从「主按钮蓝」改为「半透明表面底 + 平台彩点」——
+                // 颜色只承担平台身份；「这是动图」的意思由文字 Live 表达
+                Row(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(6.dp)
+                        .padding(Spacing.sm)
                         .clip(Radii.pill)
-                        .background(MaterialTheme.colorScheme.primary)
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
                         .padding(horizontal = 8.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    platform?.let {
+                        PlatformDot(it, size = 6.dp)
+                        Spacer(Modifier.width(Spacing.xs))
+                    }
                     Text(
                         text = "Live",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onPrimary,
+                        color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.Bold,
                     )
                 }
             }
-            when (state) {
-                is ItemState.Downloading -> {
-                    // 下载中：胶囊内进度环
-                    MediaActionSlot(label = "第 ${index + 1} 张保存中") {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            CircularProgressIndicator(
-                                progress = state.progress,
-                                modifier = Modifier.fillMaxSize(),
-                                strokeWidth = 2.5.dp,
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                            )
-                            Icon(
-                                Icons.Filled.Download,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(14.dp),
-                            )
-                        }
-                    }
-                }
-                ItemState.Done -> {
-                    // 保存成功：对勾弹性放大入场（稳定 API，替代 AnimatedVisibility + scaleIn）
-                    val scale = remember { Animatable(0.4f) }
-                    LaunchedEffect(Unit) {
-                        scale.animateTo(
-                            targetValue = 1f,
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessMedium,
-                            ),
-                        )
-                    }
-                    val scaleModifier = Modifier.graphicsLayer {
-                        scaleX = scale.value
-                        scaleY = scale.value
-                    }
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(8.dp)
-                            .clip(Radii.pill)
-                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.92f))
-                            .padding(horizontal = 8.dp, vertical = 2.dp),
-                    ) {
-                        Text(
-                            text = "已保存",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                    }
-                    // Live 图：对勾本身可点，用来改存静态图；静态图则只是完成标记
-                    MediaActionSlot(
-                        label = if (item.live) "已保存 Live 图，点击可再保存静态图" else "已保存",
-                        enabled = !downloading,
-                        onClick = if (item.live) onLiveChoice else null,
-                    ) {
-                        Icon(
-                            Icons.Filled.CheckCircle,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = scaleModifier.size(26.dp),
-                        )
-                    }
-                }
-                is ItemState.Failed -> {
-                    MediaActionSlot(
-                        label = if (item.live) "Live 图保存失败，点击选择方式" else "保存失败，点击重试",
-                        enabled = !downloading,
-                        onClick = if (item.live) onLiveChoice else onDownload,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.error),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.Filled.Close,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.onError,
-                            )
-                        }
-                    }
-                }
-                ItemState.Idle -> {
-                    MediaActionSlot(
-                        label = if (item.live) "保存第 ${index + 1} 张（Live 图）" else "保存第 ${index + 1} 张",
-                        enabled = !downloading,
-                        onClick = if (item.live) onLiveChoice else onDownload,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(30.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.Filled.Download,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                }
-            }
+            // 动作位：与视频区共用同一套状态表现（见 MediaSaveAction）
+            MediaSaveAction(
+                state = state,
+                downloading = downloading,
+                live = item.live,
+                labelBase = "第 ${index + 1} 张",
+                onDownload = onDownload,
+                onLiveChoice = onLiveChoice,
+            )
         }
 }
 
 /**
- * 结果页媒体卡右下角的统一动作位。
+ * 媒体保存动作位：把「当前状态 → 视觉 + 读屏文案 + 可点行为」这套映射集中在一处，
+ * 供**图片网格**与**视频区**共用。
+ *
+ * 抽出来的直接原因：视频区此前**完全没有保存入口** —— 用户想只留这段视频，只能点底部
+ * 「全部保存」，把同一条作品的其它媒体一并存下来。加视频的保存按钮时才发现这套状态映射
+ * 原先写死在 MediaCard 内，必须先提出来才能复用，否则就是两份会各自漂移的重复逻辑。
+ *
+ * [labelBase] 只影响读屏文案：图片传「第 N 张」、视频传「视频」。
+ * [live] 对视频恒为 false（Live 是图片的动图形态），因此 [onLiveChoice] 不会被调用。
+ */
+@Composable
+private fun BoxScope.MediaSaveAction(
+    state: ItemState,
+    downloading: Boolean,
+    live: Boolean,
+    labelBase: String,
+    onDownload: () -> Unit,
+    onLiveChoice: () -> Unit,
+    align: Alignment = Alignment.BottomEnd,
+) {
+    when (state) {
+        is ItemState.Downloading -> {
+            // 下载中：进度环
+            MediaActionSlot(label = "${labelBase}保存中", align = align) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        progress = state.progress,
+                        modifier = Modifier.fillMaxSize(),
+                        strokeWidth = 2.5.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    )
+                    Icon(
+                        Icons.Filled.Download,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
+        }
+        ItemState.Done -> {
+            // 保存成功：对勾弹性放大入场（稳定 API，替代 AnimatedVisibility + scaleIn）
+            val scale = remember { Animatable(0.4f) }
+            LaunchedEffect(Unit) {
+                scale.animateTo(
+                    targetValue = 1f,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium,
+                    ),
+                )
+            }
+            val scaleModifier = Modifier.graphicsLayer {
+                scaleX = scale.value
+                scaleY = scale.value
+            }
+            // 保存完成的反馈只保留这一处对勾。此前左下角还叠了一个「已保存」胶囊、
+            // 底部常驻条又报了「已保存 N / M」，同一状态出现三层、同一张图上重复两遍。
+            // Live 图：对勾本身可点，用来改存静态图；静态图与视频则只是完成标记
+            MediaActionSlot(
+                label = if (live) "已保存 Live 图，点击可再保存静态图" else "${labelBase}已保存",
+                enabled = !downloading,
+                onClick = if (live) onLiveChoice else null,
+                align = align,
+            ) {
+                Icon(
+                    Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = scaleModifier.size(26.dp),
+                )
+            }
+        }
+        is ItemState.Failed -> {
+            MediaActionSlot(
+                label = if (live) "Live 图保存失败，点击选择方式" else "${labelBase}保存失败，点击重试",
+                enabled = !downloading,
+                onClick = if (live) onLiveChoice else onDownload,
+                align = align,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.error),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onError,
+                    )
+                }
+            }
+        }
+        ItemState.Idle -> {
+            MediaActionSlot(
+                label = if (live) "保存$labelBase（Live 图）" else "保存$labelBase",
+                enabled = !downloading,
+                onClick = if (live) onLiveChoice else onDownload,
+                align = align,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.Download,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 结果页媒体卡动作位的容器（位置 + 触控目标 + 语义）。
  *
  * 外层固定 48dp 作为触控目标（Material 建议的最小可点尺寸），内层由调用方决定视觉尺寸 ——
  * 这样"视觉 26/30/34dp 的圆点"与"手指可点区域"解耦，且位置不再随下载状态在左右角之间跳变。
  * 可访问性：动作文案挂在整块区域上，读屏会把"保存第 N 张"识别成一个整体动作。
+ *
+ * [align] 默认右下角；视频区传 `TopEnd` —— 视频的 ExoPlayer 控制条在**底部**，
+ * 保存按钮若放右下角，会在控制条出现时被盖住、点不到。
  */
 @Composable
 private fun BoxScope.MediaActionSlot(
     label: String,
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
+    align: Alignment = Alignment.BottomEnd,
     content: @Composable () -> Unit,
 ) {
     Box(
         modifier = Modifier
-            .align(Alignment.BottomEnd)
+            .align(align)
             .size(48.dp)
             .semantics { contentDescription = label }
             .then(
@@ -832,7 +947,7 @@ private fun LiveChoiceDialog(
                     },
                 )
                 failedMessage?.let {
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(Spacing.sm))
                     Text(
                         text = it,
                         style = MaterialTheme.typography.bodySmall,

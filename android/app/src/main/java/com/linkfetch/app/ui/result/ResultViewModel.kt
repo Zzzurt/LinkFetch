@@ -151,7 +151,12 @@ class ResultViewModel(
                 }
                 notifier.notifySaved(1, lastSavedUri)
             } else {
+                // 失败原因必须直接说出来。此前这里只设 error（显示在网格**尾部**的 ErrorCard），
+                // 用户点了视频/图片上的保存按钮、看到红色 × 之后，要一路滚到底才知道为什么失败
+                // —— 大多数情况下根本不会去滚。改成同时走 message（Snackbar），就地给出原因。
+                val reason = (_itemStates.value[index] as? ItemState.Failed)?.message
                 error = "保存失败，可重试"
+                message = "保存失败：${reason ?: "未知原因"}"
             }
             downloading = false
         }

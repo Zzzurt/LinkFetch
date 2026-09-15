@@ -24,7 +24,12 @@ private val LightColors = lightColorScheme(
     surfaceVariant = Slate100,
     onSurfaceVariant = Slate600,
     outline = Slate200,
-    outlineVariant = Slate100,
+    // 分隔线专用色。原先这里是 Slate100(#F1F5F9)，压在页面底 Slate50(#F8FAFC) 上对比只有
+    // 1.05:1 —— 浅色模式下的 Divider 等于没画（分隔线要"轻"，但不能不可见）。
+    // 提高到 Slate300 后约 1.42:1，与深色下 Slate700 压 DarkBackground 的 1.81:1 观感接近。
+    // outline(Slate200) 保持不动：它同时是 OutlinedTextField 未聚焦态的默认边框色。
+    // 注意 outlineVariant 在浅色下只被 Divider 使用（浅色卡片不带描边），所以这次改动面很窄。
+    outlineVariant = Slate300,
     error = ErrorRed,
     onError = Color.White,
     errorContainer = ErrorContainerLight,

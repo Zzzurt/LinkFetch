@@ -41,3 +41,5 @@ UI_OPTIMIZATION_DELIVERY.md
 # 内部代码评审记录（含未修复问题细节，修复后再决定是否公开）
 CODE_REVIEW_*.md
 UI_REVIEW_*.md
+# 内部 UI 设计方案与提案（含未采纳的备选方案，实施后再决定是否公开）
+UI_DESIGN_*.md

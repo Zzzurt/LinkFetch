@@ -42,10 +42,19 @@ val LinkFetchTypography = Typography(
         lineHeight = 24.sp,
         fontWeight = FontWeight.SemiBold,
     ),
+    /**
+     * 列表标题 / 卡片标题 / 页内分区标签。
+     *
+     * 字重从 Medium 提到 SemiBold：14sp Medium 与字号同级的 `bodyMedium`(14sp Regular) 只差
+     * 一个字重，作为"标题"层级不够 —— 深色下尤其明显，卡片标题读起来像正文的第一行。
+     * 提一档后，标题与正文的差异来自**字重**而不是颜色，色觉障碍用户同样能分辨。
+     *
+     * SectionHeader 仍显式声明 SemiBold、不依赖这里的取值，组件规格保持自洽。
+     */
     titleSmall = TextStyle(
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.SemiBold,
     ),
     bodyLarge = TextStyle(
         fontSize = 16.sp,

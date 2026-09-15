@@ -3,7 +3,6 @@ package com.linkfetch.app.data.prefs
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -25,10 +24,6 @@ class SettingsRepository(context: Context) {
 
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
-
-    val onboardingDone: kotlinx.coroutines.flow.Flow<Boolean> = dataStore.data.map { prefs ->
-        prefs[Keys.ONBOARDING_DONE] ?: false
-    }
 
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
@@ -58,12 +53,6 @@ class SettingsRepository(context: Context) {
         }
     }
 
-    suspend fun markOnboardingDone() {
-        dataStore.edit { prefs ->
-            prefs[Keys.ONBOARDING_DONE] = true
-        }
-    }
-
     private object Keys {
         val PARSE_MODE = stringPreferencesKey("parse_mode")
         val BASE_URL = stringPreferencesKey("base_url")
@@ -72,7 +61,6 @@ class SettingsRepository(context: Context) {
         val DOUYIN_COOKIE = stringPreferencesKey("douyin_cookie")
         val WEIBO_COOKIE = stringPreferencesKey("weibo_cookie")
         val DOWNLOAD_QUALITY = stringPreferencesKey("download_quality")
-        val ONBOARDING_DONE = booleanPreferencesKey("onboarding_done")
     }
 }
 
