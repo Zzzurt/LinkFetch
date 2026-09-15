@@ -43,8 +43,8 @@ android {
         applicationId = "com.linkfetch.app"
         minSdk = 26
         targetSdk = 33
-        versionCode = 25
-        versionName = "1.7.3"
+        versionCode = 28
+        versionName = "1.7.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
