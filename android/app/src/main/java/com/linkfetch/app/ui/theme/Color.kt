@@ -1,6 +1,7 @@
 package com.linkfetch.app.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
 // ---------- 品牌蓝 ----------
 val Blue300 = Color(0xFF93C5FD)
@@ -42,3 +43,7 @@ val OnErrorContainerDark = Color(0xFFFECACA)
 /** 平台色（深色模式取降饱和版本），用于筛选 Chip、强调等场景 */
 fun platformAccent(platform: com.linkfetch.app.util.Platform, isDark: Boolean): Color =
     Color(if (isDark) platform.badgeColorDark else platform.badgeColor)
+
+/** 平台色前景：亮底（微博橙/抖音青）用深字，暗底（小红书红/X 黑）用白字，保证 AA 对比 */
+fun onPlatform(accent: Color): Color =
+    if (accent.luminance() > 0.5f) Color(0xFF0F172A) else Color.White

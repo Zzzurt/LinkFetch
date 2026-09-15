@@ -32,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,23 +49,26 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.linkfetch.app.data.AppContainer
-import com.linkfetch.app.ui.components.BrandMark
 import com.linkfetch.app.ui.components.ErrorCard
 import com.linkfetch.app.ui.components.GroupCard
 import com.linkfetch.app.ui.components.LoadingButton
 import com.linkfetch.app.ui.components.PlatformBadge
+import com.linkfetch.app.ui.components.ScreenFadeIn
 import com.linkfetch.app.ui.components.ShimmerBox
 import com.linkfetch.app.ui.components.VerticalSpace
 import com.linkfetch.app.ui.theme.Radii
@@ -128,52 +132,96 @@ fun HomeScreen(
         viewModel.dismissClipboard()
     }
 
-    // 用 Box 承载 Snackbar 浮层，消息反馈与结果页/设置页统一走 Snackbar
-    Box(modifier = Modifier.fillMaxSize()) {
+    // 用 Box 承载 Snackbar 浮层，消息反馈与结果页/设置页统一走 Snackbar；
+    // 整页包 ScreenFadeIn：进入时淡入，去掉页面硬切感
+    ScreenFadeIn(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = Spacing.screen, vertical = Spacing.lg),
         ) {
-            // 品牌头部：渐变 Hero 底，收拢页面顶部视觉
+            // 品牌头部：品牌蓝渐变打底 + 四角平台色光晕（C3+）。
+            // 蓝底压住亮度，白字对比度不依赖整卡深色遮罩；光晕浓度浅色 0.72/0.62/0.55/0.72，
+            // 深色整体降约 30%（X 黑换中灰 #6B7280 后保持 0.70 才可见）。
+            // 光晕用 drawBehind 画在背景层：Box 会测量子节点（含 align 定位的）撑高卡片，
+            // 之前的 240dp 光晕子节点把 Hero 撑到 240dp 高，文字只占上部 1/4，下方大片留白。
+            val heroDark = isSystemInDarkTheme()
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // 与卡片同一套分层语言：浅色靠 1dp 阴影、深色靠描边之外的底色差
                     .shadow(1.dp, Radii.card)
                     .clip(Radii.card)
-                    .background(MaterialTheme.colorScheme.surface)
-                    // 原先渐变终点取 background，浅色下 primaryContainer(#EFF6FF) 与页面背景(#F8FAFC)
-                    // 对比仅 1.05:1，卡片轮廓完全看不出来。改为「surface 打底 + 品牌色半透明向下渐隐」，
-                    // 深浅两种模式都能看出这是一块独立卡片。
                     .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-                                Color.Transparent,
-                            ),
+                        Brush.linearGradient(
+                            if (heroDark) {
+                                listOf(Color(0xFF1E3A8A), Color(0xFF1D4ED8))
+                            } else {
+                                listOf(Color(0xFF2563EB), Color(0xFF3B82F6))
+                            },
                         ),
                     )
-                    .padding(Spacing.lg),
+                    .drawBehind {
+                        // 四角光晕：blob 圆心落在卡片角上，向卡片内扩散后自然渐隐
+                        val haloRadius = 120.dp.toPx()
+                        listOf(
+                            Offset(0f, 0f) to (Platform.XHS to if (heroDark) 0.52f else 0.72f),
+                            Offset(size.width, 0f) to (Platform.WEIBO to if (heroDark) 0.44f else 0.62f),
+                            Offset(0f, size.height) to (Platform.DOUYIN to if (heroDark) 0.38f else 0.55f),
+                            Offset(size.width, size.height) to (Platform.X to if (heroDark) 0.70f else 0.72f),
+                        ).forEach { (center, spec) ->
+                            val accent = platformAccent(spec.first, heroDark)
+                            drawCircle(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(accent.copy(alpha = spec.second), Color.Transparent),
+                                    center = center,
+                                    radius = haloRadius,
+                                ),
+                                radius = haloRadius,
+                                center = center,
+                            )
+                        }
+                    },
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    BrandMark(size = 44.dp)
-                    Spacer(Modifier.width(Spacing.md))
-                    Column {
-                        Text(
-                            text = "链取",
-                            // 与历史/设置页的页标题同为 titleLarge，避免切页时标题大小跳动
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                        Text(
-                            text = "一键提取无水印图片和视频",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // 单行横排：mark + 标题 + 平台列表同行，Hero 高度压到横幅级别
+                // （原先 mark 44dp + 两行文字竖排，整体近 80dp，占屏偏高）
+                Row(
+                    modifier = Modifier.padding(horizontal = Spacing.lg, vertical = Spacing.sm),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // 品牌标：白底 + 蓝链图标。蓝渐变方块叠在蓝底 Hero 上会隐形，故改为白底。
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(Radii.card)
+                            .background(Color.White),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.Link,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
                         )
                     }
+                    Spacer(Modifier.width(Spacing.md))
+                    Text(
+                        text = "链取",
+                        // 与历史/设置页的页标题同为 titleLarge，避免切页时标题大小跳动
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                    Spacer(Modifier.width(Spacing.md))
+                    Text(
+                        // 副标题承载平台列表（产品价值句由引导条「复制链接→解析→保存」承担）
+                        text = "小红书 · 抖音 · 微博 · X",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.85f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
             // 区块间距用 24dp、组内用 8/12dp：间距有了对比，界面才有"重点"，

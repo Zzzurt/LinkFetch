@@ -57,6 +57,7 @@ import com.linkfetch.app.BuildConfig
 import com.linkfetch.app.data.AppContainer
 import com.linkfetch.app.ui.components.LoadingButton
 import com.linkfetch.app.ui.components.PageHeader
+import com.linkfetch.app.ui.components.ScreenFadeIn
 import com.linkfetch.app.ui.components.VerticalSpace
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.SuccessGreen
@@ -79,7 +80,8 @@ fun SettingsScreen(container: AppContainer) {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    // 整页包 ScreenFadeIn：进入时淡入，去掉页面硬切感（Snackbar 浮层由内部 Column 上方的 Box 承载）
+    ScreenFadeIn(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()

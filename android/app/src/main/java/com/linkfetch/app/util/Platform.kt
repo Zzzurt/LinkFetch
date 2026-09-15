@@ -7,12 +7,12 @@ enum class Platform(
     /** 深色模式下的强调色（降饱和/提亮，保证与文字对比度） */
     val badgeColorDark: Long,
 ) {
-    // 徽标与筛选 Chip 都用「底色 + 白字」，白字需 ≥4.5:1（14sp 标签、12.6sp 徽标字）。
-    // 小红书原先的 #FF2442 白字只有 3.77:1，不达 AA；改用同色系更深的 #E11D3D → 4.72:1。
-    // 微博 #E6162D 为 4.65:1，刚好达标，维持原品牌色不动。
+    // 徽标与筛选 Chip 的前景色由 onPlatform() 按底色亮度自适应（亮底用深字、暗底用白字），
+    // 不再固定白字；这里的 badgeColor 只是「平台品牌色」，深浅模式各自取值。
+    // 四色定为：小红书红 / 微博橙 / 抖音青 / X 黑——冷暖错开，避免抖音黑与 X 黑两块近黑色糊在一起。
     XHS("xhs", "小红书", 0xFFE11D3D, 0xFFE11D3D),
-    DOUYIN("douyin", "抖音", 0xFF161823, 0xFF3B4250),
-    WEIBO("weibo", "微博", 0xFFE6162D, 0xFFC4111F),
+    DOUYIN("douyin", "抖音", 0xFF25F4EE, 0xFF25F4EE),
+    WEIBO("weibo", "微博", 0xFFF59E0B, 0xFFF59E0B),
     X("x", "X", 0xFF0F1419, 0xFF6B7280);
 
     companion object {

@@ -68,9 +68,11 @@ import com.linkfetch.app.ui.components.PageHeader
 import com.linkfetch.app.ui.components.PlatformBadge
 import com.linkfetch.app.ui.components.ShimmerImage
 import com.linkfetch.app.ui.components.TypeTag
+import com.linkfetch.app.ui.components.ScreenFadeIn
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.platformAccent
+import com.linkfetch.app.ui.theme.onPlatform
 import com.linkfetch.app.util.Platform
 import com.linkfetch.app.util.formatHistoryTime
 import java.time.Instant
@@ -110,8 +112,9 @@ fun HistoryScreen(
         }
     }
 
-    // 用 Box 承载 Snackbar 浮层（消息反馈与其他页统一走 Snackbar，原先用 Toast 样式不一致）
-    Box(modifier = Modifier.fillMaxSize()) {
+    // 用 Box 承载 Snackbar 浮层（消息反馈与其他页统一走 Snackbar，原先用 Toast 样式不一致）；
+    // 整页包 ScreenFadeIn：进入时淡入，去掉页面硬切感
+    ScreenFadeIn(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             PageHeader(
                 title = if (viewModel.selectionMode) "已选 ${viewModel.selectedIds.size} 项" else "历史记录",
@@ -159,7 +162,8 @@ fun HistoryScreen(
                         modifier = Modifier.padding(vertical = 4.dp),
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = accent,
-                            selectedLabelColor = Color.White,
+                            // 前景色随底色自适应：橙/青用深字、红/黑用白字，避免橙青配白字不达 AA
+                            selectedLabelColor = onPlatform(accent),
                         ),
                     )
                 }

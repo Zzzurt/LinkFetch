@@ -10,7 +10,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -88,6 +90,7 @@ import com.linkfetch.app.data.model.ParseResponseDto
 import com.linkfetch.app.ui.components.ErrorCard
 import com.linkfetch.app.ui.components.LoadingButton
 import com.linkfetch.app.ui.components.PlatformBadge
+import com.linkfetch.app.ui.components.ScreenFadeIn
 import com.linkfetch.app.ui.components.ShimmerImage
 import com.linkfetch.app.ui.components.TypeTag
 import com.linkfetch.app.ui.theme.Radii
@@ -188,6 +191,7 @@ fun ResultScreen(
     val failedCount = itemStates.values.count { it is ItemState.Failed }
     val total = result?.medias?.size ?: 0
 
+    ScreenFadeIn(modifier = Modifier.fillMaxSize()) {
     Scaffold(
         topBar = {
             TopAppBar(
@@ -267,6 +271,7 @@ fun ResultScreen(
                 onDismiss = { previewIndex = null },
             )
         }
+    }
     }
 }
 
@@ -441,6 +446,11 @@ private fun ResultContent(
     val imageMediaIndices = result.medias.indices.filter { !result.medias[it].isVideo }
     val video = result.videos.firstOrNull()
 
+    // 首帧入场：让网格逐项错峰淡入，避免一整页"啪"地出现。
+    // entrance 置 true 后不再变，滚动新增的 item 直接显示、不重复动画。
+    var entrance by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entrance = true }
+
     // ---- 图片网格：「相册式」定稿排版 ----
     // 圆角 4dp、间隙 2dp、容器透明，图片彼此连成一片（此前每张图是 16dp 圆角 + 8dp 间隙的独立卡片，
     // 画面被切成若干块「卡」，视线在容器和图片之间反复切换）。
@@ -560,6 +570,16 @@ private fun ResultContent(
                         }
                     },
                 ) { imagePosition, mediaIndex ->
+                    // 首帧逐项错峰淡入：每张比前一张晚 40ms，上限 400ms，250ms 淡入。
+                    // 用 graphicsLayer 只调透明度，不改变测量尺寸，网格布局不会跳动。
+                    val alpha by animateFloatAsState(
+                        targetValue = if (entrance) 1f else 0f,
+                        animationSpec = tween(
+                            durationMillis = 250,
+                            delayMillis = (imagePosition * 40).coerceAtMost(400),
+                        ),
+                        label = "mediaEntrance",
+                    )
                     MediaCard(
                         item = result.medias[mediaIndex],
                         index = mediaIndex,
@@ -571,6 +591,7 @@ private fun ResultContent(
                         onClick = { onPreview(imagePosition) },
                         modifier = Modifier
                             .fillMaxWidth()
+                            .graphicsLayer { this.alpha = alpha }
                             // 通栏卡用 4:3 而不是 16:9：竖构图（小红书/抖音绝大多数是 3:4、9:16）
                             // 放进 16:9 会被裁掉一大半，4:3 的裁切量小得多
                             .aspectRatio(if (imagePosition == lastFullWidthPosition) 4f / 3f else 1f),

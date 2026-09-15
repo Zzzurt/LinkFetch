@@ -2,6 +2,7 @@ package com.linkfetch.app.ui.components
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -10,6 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -23,7 +25,6 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material3.Button
@@ -36,7 +37,11 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +49,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -54,34 +60,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
-import com.linkfetch.app.ui.theme.Blue500
-import com.linkfetch.app.ui.theme.Blue600
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Slate300
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.platformAccent
+import com.linkfetch.app.ui.theme.onPlatform
 import com.linkfetch.app.util.Platform
-
-// ---------- 品牌 ----------
-
-/** App 内品牌位：蓝渐变圆角方块 + 链接图标 */
-@Composable
-fun BrandMark(modifier: Modifier = Modifier, size: Dp = 40.dp) {
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(Radii.card)
-            .background(Brush.linearGradient(listOf(Blue600, Blue500))),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            Icons.Filled.Link,
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(size * 0.55f),
-        )
-    }
-}
 
 // ---------- 平台 / 类型标识 ----------
 
@@ -106,7 +90,8 @@ fun PlatformBadge(
     ) {
         Text(
             text = platform.label.take(1),
-            color = Color.White,
+            // 前景色随底色亮度自适应：橙/青亮底用深字、红/黑暗底用白字（AA 对比）
+            color = onPlatform(accent),
             fontWeight = FontWeight.Bold,
             fontSize = (size * 0.45f).sp,
             maxLines = 1,
@@ -392,4 +377,26 @@ fun GroupCard(
     ) {
         Column(modifier = Modifier.padding(Spacing.lg), content = content)
     }
+}
+
+/**
+ * 页面级入场：进入时整体淡入 180ms。
+ *
+ * navigation-compose 2.5.3 的 NavHost 没有声明式页面转场参数（2.7.0 才加入），
+ * 用这个组件兜底，让四页切换不再硬切。返回栈 pop 回来的页面会重新组合，同样淡入，
+ * 观感一致。只调透明度、不改测量，不会引起布局跳动。
+ */
+@Composable
+fun ScreenFadeIn(
+    modifier: Modifier = Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    var entrance by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { entrance = true }
+    val alpha by animateFloatAsState(
+        targetValue = if (entrance) 1f else 0f,
+        animationSpec = tween(180),
+        label = "screenEntrance",
+    )
+    Box(modifier = modifier.graphicsLayer { this.alpha = alpha }, content = content)
 }
