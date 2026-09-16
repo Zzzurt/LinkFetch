@@ -106,24 +106,44 @@ fun PlatformBadge(
     platform: Platform,
     modifier: Modifier = Modifier,
     size: Int = 28,
+    /**
+     * 是否处于「已识别」状态。
+     *
+     * 默认 true 保持原有平台色；传 false 时降为统一中性灰（浅 surfaceVariant / 深 DarkSurfaceHigh）。
+     * 用于首页输入区的徽标行：平时一行同色、安静不花哨，只有检测到当前输入属于哪个平台时
+     * 才把对应徽标点亮为平台色 —— 颜色重新承担「即时反馈」的含义。
+     */
+    active: Boolean = true,
 ) {
     val accent = platformAccent(platform, isSystemInDarkTheme())
+    val background = if (active) {
+        Brush.linearGradient(listOf(lerp(accent, Color.White, 0.14f), accent))
+    } else {
+        Brush.linearGradient(
+            listOf(
+                MaterialTheme.colorScheme.surfaceVariant,
+                MaterialTheme.colorScheme.surfaceVariant,
+            ),
+        )
+    }
+    val foreground = if (active) {
+        onPlatform(accent)
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Box(
         modifier = modifier
             // 用 sizeIn 而不是 size：字号随系统放大时容器跟着长，单个汉字不会被圆标裁掉。
             // 极端字号下会退化成胶囊形，比切掉笔画好。
             .sizeIn(minWidth = size.dp, minHeight = size.dp)
-            .background(
-                Brush.linearGradient(listOf(lerp(accent, Color.White, 0.14f), accent)),
-                CircleShape,
-            )
+            .background(background, CircleShape)
             .padding(horizontal = 3.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = platform.label.take(1),
             // 前景色随底色亮度自适应：橙/青亮底用深字、红/黑暗底用白字（AA 对比）
-            color = onPlatform(accent),
+            color = foreground,
             fontWeight = FontWeight.Bold,
             fontSize = (size * 0.45f).sp,
             maxLines = 1,

@@ -277,8 +277,18 @@ fun HomeScreen(
                             focusedBorderColor = Color.Transparent,
                             unfocusedBorderColor = Color.Transparent,
                             disabledBorderColor = Color.Transparent,
+                            // 悬浮 label 优雅化：颜色从品牌蓝降为中性次级色（onSurfaceVariant），
+                            // 蓝色在这个面板里已经出现两次（面板 + 解析按钮文字），再有一处蓝就是噪音；
+                            // 中性灰让悬浮标签安静地「挂」在白块上沿，不与内容抢视觉。
+                            focusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
-                        label = { Text("链接") },
+                        // 悬浮 label：保留 M3 的「聚焦/有内容时上浮到框内顶部」行为，
+                        // 只把字号收到的 labelMedium —— 不再用 16sp 大字把整块输入区撑高，
+                        // 悬浮后视觉略轻，与下方徽标行层次拉开。
+                        label = {
+                            Text("链接", style = MaterialTheme.typography.labelMedium)
+                        },
                         placeholder = { Text("粘贴链接或整段分享文案") },
                         minLines = 2,
                         maxLines = 4,
@@ -317,11 +327,16 @@ fun HomeScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // 平台徽标行：带文字的圆形徽标，支持哪些平台一目了然（不再用裸彩点）
+                        // 平台徽标行：平时整行同色（未识别的平台为中性灰），安静不花哨；
+                        // 输入内容含有某平台链接/文案时，对应徽标点亮为平台色 —— 即时反馈。
+                        val detectedPlatform = remember(viewModel.input) {
+                            Platform.detectFromText(viewModel.input)
+                        }
                         Platform.values().forEach { platform ->
                             PlatformBadge(
                                 platform = platform,
                                 size = 24,
+                                active = platform == detectedPlatform,
                                 modifier = Modifier.padding(end = Spacing.sm),
                             )
                         }
