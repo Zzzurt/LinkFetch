@@ -88,7 +88,7 @@ import com.linkfetch.app.data.model.MediaItemDto
 import com.linkfetch.app.data.model.ParseResponseDto
 import com.linkfetch.app.ui.components.ErrorCard
 import com.linkfetch.app.ui.components.LoadingButton
-import com.linkfetch.app.ui.components.PlatformDot
+import com.linkfetch.app.ui.components.PlatformBadge
 import com.linkfetch.app.ui.components.ScreenFadeIn
 import com.linkfetch.app.ui.components.SectionHeader
 import com.linkfetch.app.ui.components.ShimmerImage
@@ -513,11 +513,11 @@ private fun ResultContent(
                     //     类型信息并入元信息行（「12 图 · 1 视频」），数据没丢、行数没增。
                     //  3. 复制原链接移到 TopAppBar actions（见上方注释）。
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // v1.8：身份标识从 28dp 徽标换成 8dp 平台彩点，
-                        // 「这是哪个平台」还在，但不再与标题抢视觉重量
+                        // v1.8 第二轮：身份标识从 8dp 彩点改回带文字的徽标，
+                        // 与首页输入区同一套平台图形语言
                         platform?.let {
-                            PlatformDot(it)
-                            Spacer(Modifier.width(Spacing.sm))
+                            PlatformBadge(it, size = 24)
+                            Spacer(Modifier.width(Spacing.md))
                         }
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
@@ -664,7 +664,6 @@ private fun ResultContent(
                         index = mediaIndex,
                         state = itemStates[mediaIndex] ?: ItemState.Idle,
                         downloading = downloading,
-                        platform = platform,
                         onDownload = { onDownloadOne(mediaIndex) },
                         onLiveChoice = { onLiveChoice(mediaIndex) },
                         // imagePosition 即该图在 result.images 中的位置，供全屏预览定位
@@ -705,7 +704,6 @@ private fun MediaCard(
     index: Int,
     state: ItemState,
     downloading: Boolean,
-    platform: Platform?,
     onDownload: () -> Unit,
     onLiveChoice: () -> Unit,
     onClick: () -> Unit,
@@ -724,21 +722,16 @@ private fun MediaCard(
             contentDescription = "第 ${index + 1} 张图片",
         )
             if (item.live) {
-                // v1.8：Live 徽章从「主按钮蓝」改为「半透明表面底 + 平台彩点」——
-                // 颜色只承担平台身份；「这是动图」的意思由文字 Live 表达
-                Row(
+                // v1.8 第二轮：Live 徽章只留「Live」文字 —— 平台身份由信息头的徽标表达，
+                // 徽章上无需再重复一个彩点
+                Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .padding(Spacing.sm)
                         .clip(Radii.pill)
                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f))
                         .padding(horizontal = 8.dp, vertical = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    platform?.let {
-                        PlatformDot(it, size = 6.dp)
-                        Spacer(Modifier.width(Spacing.xs))
-                    }
                     Text(
                         text = "Live",
                         style = MaterialTheme.typography.labelSmall,

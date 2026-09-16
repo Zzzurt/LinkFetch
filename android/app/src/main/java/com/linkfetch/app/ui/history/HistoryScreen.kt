@@ -68,7 +68,7 @@ import com.linkfetch.app.data.db.HistoryEntity
 import com.linkfetch.app.ui.components.CoverPlaceholder
 import com.linkfetch.app.ui.components.EmptyState
 import com.linkfetch.app.ui.components.PageHeader
-import com.linkfetch.app.ui.components.PlatformDot
+import com.linkfetch.app.ui.components.PlatformBadge
 import com.linkfetch.app.ui.components.ShimmerImage
 import com.linkfetch.app.ui.components.TypeTag
 import com.linkfetch.app.ui.components.ScreenFadeIn
@@ -491,13 +491,12 @@ private fun HistoryCard(
                     TypeTag(entity.type)
                 }
                 Spacer(Modifier.height(4.dp))
-                // v1.8：平台身份改用彩点 + 时间/保存数文字。
-                // 平台名从 meta 行拿掉（TypeTag 与封面仍在表达类型与内容），
-                // 行内只留「彩点(身份) + 相对时间 + 已保存数」，信息密度更整。
+                // v1.8 第二轮：平台身份从 6dp 彩点改为带文字的徽标，
+                // 与首页/结果页统一同平台图形语言；时间与保存数保留在文字里
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Platform.fromKey(entity.platform)?.let { platform ->
-                        PlatformDot(platform, size = 6.dp)
-                        Spacer(Modifier.width(Spacing.xs))
+                        PlatformBadge(platform, size = 18)
+                        Spacer(Modifier.width(Spacing.sm))
                     }
                     Text(
                         text = buildString {

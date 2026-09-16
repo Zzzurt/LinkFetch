@@ -274,13 +274,13 @@ fun HomeScreen(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.surface,
                             unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                            focusedBorderColor = Color.Transparent,
+                            // 聚焦态 = 品牌蓝：1dp 描边（圆角与输入框自身的 Radii.field 一致）
+                            // + 悬浮 label 同步品牌蓝 —— 「链接」悬浮后清晰可读，焦点一眼可辨；
+                            // 未聚焦时保持无框、label 中性灰，整行安静不抢视觉。
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
                             unfocusedBorderColor = Color.Transparent,
                             disabledBorderColor = Color.Transparent,
-                            // 悬浮 label 优雅化：颜色从品牌蓝降为中性次级色（onSurfaceVariant），
-                            // 蓝色在这个面板里已经出现两次（面板 + 解析按钮文字），再有一处蓝就是噪音；
-                            // 中性灰让悬浮标签安静地「挂」在白块上沿，不与内容抢视觉。
-                            focusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            focusedLabelColor = MaterialTheme.colorScheme.primary,
                             unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
                         // 悬浮 label：保留 M3 的「聚焦/有内容时上浮到框内顶部」行为，
