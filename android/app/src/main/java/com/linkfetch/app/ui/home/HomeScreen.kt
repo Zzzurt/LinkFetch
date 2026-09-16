@@ -9,6 +9,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +51,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -65,13 +68,11 @@ import com.linkfetch.app.ui.components.CoverPlaceholder
 import com.linkfetch.app.ui.components.ErrorCard
 import com.linkfetch.app.ui.components.GroupCard
 import com.linkfetch.app.ui.components.LoadingButton
-import com.linkfetch.app.ui.components.PlatformDot
 import com.linkfetch.app.ui.components.PlatformBadge
 import com.linkfetch.app.ui.components.ScreenFadeIn
 import com.linkfetch.app.ui.components.SectionHeader
 import com.linkfetch.app.ui.components.ShimmerBox
 import com.linkfetch.app.ui.components.ShimmerImage
-import com.linkfetch.app.ui.components.TintedPanel
 import com.linkfetch.app.ui.components.VerticalSpace
 import com.linkfetch.app.ui.components.errorAdvice
 import com.linkfetch.app.ui.theme.Radii
@@ -241,75 +242,104 @@ fun HomeScreen(
                 }
             }
     
-            // 输入工作台（v1.8）：从「描边卡片」改为「淡层面板」。
-            // - 面板本身无描边无阴影（TintedPanel），层次由「白底输入块浮在淡层上」表达；
-            // - 输入框去掉描边与下划线，只剩一块白底，视觉从「一个输入控件」变成「一张工作台」；
-            // - 平台支持信息以一行彩点形态放在这里 —— 全页只此一处说「支持哪些平台」。
-            TintedPanel {
-                OutlinedTextField(
-                    value = viewModel.input,
-                    onValueChange = viewModel::onInputChange,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = Radii.field,
-                    // 淡层上放白底输入块：输入框容器改为 surface（白），指示线全部透明，
-                    // 只保留 label / placeholder / 清除与粘贴图标的功能。
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                        focusedBorderColor = Color.Transparent,
-                        unfocusedBorderColor = Color.Transparent,
-                        disabledBorderColor = Color.Transparent,
-                    ),
-                    label = { Text("链接") },
-                    placeholder = { Text("粘贴链接或整段分享文案") },
-                    minLines = 2,
-                    maxLines = 4,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(
-                        onGo = { if (viewModel.input.isNotBlank()) viewModel.parse() },
-                    ),
-                    trailingIcon = {
-                        if (viewModel.input.isNotEmpty()) {
-                            IconButton(onClick = viewModel::clearInput) {
-                                Icon(Icons.Filled.Close, contentDescription = "清除")
+            // 输入工作台（v1.8 第二轮）：品牌蓝渐变面板。
+            // 蓝色语言此前只在 Hero 横幅上，v1.8 首轮改成了中性淡层；真机反馈想保留
+            // 品牌色填充 —— 蓝色只给「输入」这一个主动作，品牌色收敛到动作区：
+            // - 面板：品牌蓝渐变（沿用原 Hero 的 #2563EB→#3B82F6 / 深色 #1E3A8A→#1D4ED8）；
+            // - 输入框：白色浮块（深色下用 surface 深块），去掉描边只留白底；
+            // - 面板内边距 16dp：内容（含输入框 label 与图标）不再贴边。
+            // - 平台信息用带文字的徽标，比彩点更能表达「支持哪些平台」。
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(Radii.card)
+                    .background(
+                        Brush.linearGradient(
+                            if (isSystemInDarkTheme()) {
+                                listOf(Color(0xFF1E3A8A), Color(0xFF1D4ED8))
+                            } else {
+                                listOf(Color(0xFF2563EB), Color(0xFF3B82F6))
+                            },
+                        ),
+                    )
+                    .padding(Spacing.lg),
+            ) {
+                Column {
+                    OutlinedTextField(
+                        value = viewModel.input,
+                        onValueChange = viewModel::onInputChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = Radii.field,
+                        // 白色输入浮层：容器 surface（浅色白块 / 深色深块），指示线透明
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            disabledBorderColor = Color.Transparent,
+                        ),
+                        label = { Text("链接") },
+                        placeholder = { Text("粘贴链接或整段分享文案") },
+                        minLines = 2,
+                        maxLines = 4,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                        keyboardActions = KeyboardActions(
+                            onGo = { if (viewModel.input.isNotBlank()) viewModel.parse() },
+                        ),
+                        trailingIcon = {
+                            if (viewModel.input.isNotEmpty()) {
+                                IconButton(onClick = viewModel::clearInput) {
+                                    Icon(Icons.Filled.Close, contentDescription = "清除")
+                                }
+                            } else {
+                                IconButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                                        val text = clipboard?.primaryClip
+                                            ?.takeIf { it.itemCount > 0 }
+                                            ?.getItemAt(0)
+                                            ?.coerceToText(context)
+                                            ?.toString()
+                                        if (!text.isNullOrBlank()) viewModel.onInputChange(text.trim())
+                                    },
+                                ) {
+                                    Icon(
+                                        Icons.Filled.ContentPaste,
+                                        contentDescription = "从剪贴板粘贴",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
-                        } else {
-                            IconButton(
-                                onClick = {
-                                    val clipboard = context.getSystemService(ClipboardManager::class.java)
-                                    val text = clipboard?.primaryClip
-                                        ?.takeIf { it.itemCount > 0 }
-                                        ?.getItemAt(0)
-                                        ?.coerceToText(context)
-                                        ?.toString()
-                                    if (!text.isNullOrBlank()) viewModel.onInputChange(text.trim())
-                                },
-                            ) {
-                                Icon(
-                                    Icons.Filled.ContentPaste,
-                                    contentDescription = "从剪贴板粘贴",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                        },
+                    )
+                    VerticalSpace(12)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // 平台徽标行：带文字的圆形徽标，支持哪些平台一目了然（不再用裸彩点）
+                        Platform.values().forEach { platform ->
+                            PlatformBadge(
+                                platform = platform,
+                                size = 24,
+                                modifier = Modifier.padding(end = Spacing.sm),
+                            )
                         }
-                    },
-                )
-                VerticalSpace(12)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // 平台彩点行：用最轻的形式交代「支持哪些平台」，不占用标题层级
-                    Platform.values().forEach { platform ->
-                        PlatformDot(
-                            platform = platform,
-                            modifier = Modifier.padding(end = Spacing.sm),
+                        Spacer(Modifier.weight(1f))
+                        LoadingButton(
+                            text = if (viewModel.parsing) "解析中…" else "解析",
+                            loading = viewModel.parsing,
+                            onClick = viewModel::parse,
+                            enabled = viewModel.input.isNotBlank(),
+                            // 蓝底上的主按钮反转为「白底 + 品牌蓝文字」，与面板同色可读
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                contentColor = MaterialTheme.colorScheme.primary,
+                                disabledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
+                                disabledContentColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                            ),
                         )
                     }
-                    Spacer(Modifier.weight(1f))
-                    LoadingButton(
-                        text = if (viewModel.parsing) "解析中…" else "解析",
-                        loading = viewModel.parsing,
-                        onClick = viewModel::parse,
-                        enabled = viewModel.input.isNotBlank(),
-                    )
                 }
             }
     
@@ -399,13 +429,8 @@ fun HomeScreen(
                     }
                     VerticalSpace(12)
                 }
-                // 平台徽标行已移除：『支持哪些平台』收敛到输入工作台的彩点行，
-                // 页脚只留一句使用说明，缩短首屏下方的"信息尾巴"。
-                Text(
-                    text = "打开 App 时自动识别剪贴板中的链接，点击即可解析。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                // v1.8 第二轮：页脚说明文字已删除 —— 剪贴板识别能力改用输入框右侧的粘贴图标表达，
+                // 首页底部不再需要一行灰色说明占用空间。
             }
         }
 

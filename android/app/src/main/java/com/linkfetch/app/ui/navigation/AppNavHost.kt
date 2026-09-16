@@ -1,7 +1,12 @@
 package com.linkfetch.app.ui.navigation
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
@@ -30,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -218,6 +224,22 @@ private fun RowScope.NavTab(
         animationSpec = tween(220),
         label = "tabContent",
     )
+    // v1.8 第二轮：按压下沉 + 选中弹性放大 —— 切换不再「咔哒」一跳，图标大小跟着状态走
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.86f else 1f,
+        animationSpec = tween(110),
+        label = "tabPressScale",
+    )
+    val selectedScale by animateFloatAsState(
+        targetValue = if (selected) 1.15f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "tabSelectedScale",
+    )
 
     NavigationBarItem(
         selected = selected,
@@ -225,10 +247,18 @@ private fun RowScope.NavTab(
             onBeforeNavigate()
             navController.navigateToTab(route)
         },
+        interactionSource = interactionSource,
         icon = {
             // contentDescription = null：下面的文字标签已经承担了可访问名称，
             // 两边都设会让读屏把同一件事念两遍。
-            Icon(icon, contentDescription = null)
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.graphicsLayer {
+                    scaleX = pressScale * selectedScale
+                    scaleY = pressScale * selectedScale
+                },
+            )
         },
         label = {
             Text(

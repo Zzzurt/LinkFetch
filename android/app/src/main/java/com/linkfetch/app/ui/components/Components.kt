@@ -30,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -242,6 +243,11 @@ fun LoadingButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     variant: ButtonVariant = ButtonVariant.Primary,
+    /**
+     * 覆盖按钮配色。默认按 [variant] 计算；仅在需要脱离体系（如蓝底面板上的
+     * 白色主按钮、语义色按钮等）时显式传入。
+     */
+    colors: ButtonColors? = null,
 ) {
     // 禁用态统一用「中性底 + 可读的次级文字」，而不是把品牌色降透明度：
     // primary.copy(alpha = 0.4f) 的浅蓝底配 M3 默认的 onSurface@38% 文字，实测对比度只有约 2.2:1
@@ -250,7 +256,7 @@ fun LoadingButton(
     // （每屏只有一个填充色元素，那个位置应该留给"可用"的状态）。
     val disabledContainer = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
     val disabledContent = MaterialTheme.colorScheme.onSurfaceVariant
-    val colors = when (variant) {
+    val variantColors = when (variant) {
         ButtonVariant.Primary -> ButtonDefaults.buttonColors(
             containerColor = MaterialTheme.colorScheme.primary,
             contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -269,7 +275,7 @@ fun LoadingButton(
         modifier = modifier,
         enabled = enabled && !loading,
         shape = MaterialTheme.shapes.extraLarge,
-        colors = colors,
+        colors = colors ?: variantColors,
     ) {
         if (loading) {
             CircularProgressIndicator(
