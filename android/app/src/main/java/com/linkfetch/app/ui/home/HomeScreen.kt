@@ -274,14 +274,14 @@ fun HomeScreen(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedContainerColor = MaterialTheme.colorScheme.surface,
                             unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                            // 聚焦态 = 品牌蓝：1dp 描边（圆角与输入框自身的 Radii.field 一致）
-                            // + 悬浮 label 同步品牌蓝 —— 「链接」悬浮后清晰可读，焦点一眼可辨；
-                            // 未聚焦时保持无框、label 中性灰，整行安静不抢视觉。
+                            // 聚焦态 = 品牌蓝描边（圆角与输入框自身的 Radii.field 一致），
+                            // 「正在输入」的语义由描边承担；悬浮 label 统一用页面主文字色
+                            // onSurface（浅色深墨/深色近白）—— 对比最强，浅色白块上绝不隐身。
                             focusedBorderColor = MaterialTheme.colorScheme.primary,
                             unfocusedBorderColor = Color.Transparent,
                             disabledBorderColor = Color.Transparent,
-                            focusedLabelColor = MaterialTheme.colorScheme.primary,
-                            unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            focusedLabelColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedLabelColor = MaterialTheme.colorScheme.onSurface,
                         ),
                         // 悬浮 label：保留 M3 的「聚焦/有内容时上浮到框内顶部」行为，
                         // 只把字号收到的 labelMedium —— 不再用 16sp 大字把整块输入区撑高，
