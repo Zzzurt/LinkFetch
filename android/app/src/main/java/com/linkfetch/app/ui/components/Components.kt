@@ -1,5 +1,6 @@
 package com.linkfetch.app.ui.components
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -116,27 +117,30 @@ fun PlatformBadge(
     active: Boolean = true,
 ) {
     val accent = platformAccent(platform, isSystemInDarkTheme())
-    val background = if (active) {
-        Brush.linearGradient(listOf(lerp(accent, Color.White, 0.14f), accent))
-    } else {
-        Brush.linearGradient(
-            listOf(
-                MaterialTheme.colorScheme.surfaceVariant,
-                MaterialTheme.colorScheme.surfaceVariant,
-            ),
-        )
-    }
-    val foreground = if (active) {
-        onPlatform(accent)
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
+    val mutedBg = MaterialTheme.colorScheme.surfaceVariant
+    // v1.8 第三轮：徽标准备色过渡 —— active 变化时背景/前景颜色做 200ms 平滑切换，
+    // 「识别到平台」的反馈不再是硬切
+    val animatedAccent by animateColorAsState(
+        targetValue = if (active) accent else mutedBg,
+        animationSpec = tween(220),
+        label = "badgeAccent",
+    )
+    val foreground by animateColorAsState(
+        targetValue = if (active) onPlatform(accent) else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(220),
+        label = "badgeForeground",
+    )
     Box(
         modifier = modifier
             // 用 sizeIn 而不是 size：字号随系统放大时容器跟着长，单个汉字不会被圆标裁掉。
             // 极端字号下会退化成胶囊形，比切掉笔画好。
             .sizeIn(minWidth = size.dp, minHeight = size.dp)
-            .background(background, CircleShape)
+            .background(
+                // active/非 active 都用「提亮→主色」的渐变；非 active 时主色为中性灰，
+                // lerp 提亮后视觉接近纯 mutedBg，观感与过渡都自然
+                Brush.linearGradient(listOf(lerp(animatedAccent, Color.White, 0.14f), animatedAccent)),
+                CircleShape,
+            )
             .padding(horizontal = 3.dp, vertical = 2.dp),
         contentAlignment = Alignment.Center,
     ) {

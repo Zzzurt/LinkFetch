@@ -75,6 +75,7 @@ import com.linkfetch.app.ui.components.ShimmerBox
 import com.linkfetch.app.ui.components.ShimmerImage
 import com.linkfetch.app.ui.components.VerticalSpace
 import com.linkfetch.app.ui.components.errorAdvice
+import com.linkfetch.app.ui.theme.Blue800
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.TextColors
@@ -289,7 +290,9 @@ fun HomeScreen(
                         label = {
                             Text("链接", style = MaterialTheme.typography.labelMedium)
                         },
-                        placeholder = { Text("粘贴链接或整段分享文案") },
+                        // placeholder 只交代「往里放什么格式」，不再重复 label 的含义：
+                        // label 悬浮已说明"这是链接"，这里给一个输入格式的示例，读一遍就懂。
+                        placeholder = { Text("https://… 或分享文案") },
                         minLines = 2,
                         maxLines = 4,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
@@ -346,12 +349,14 @@ fun HomeScreen(
                             loading = viewModel.parsing,
                             onClick = viewModel::parse,
                             enabled = viewModel.input.isNotBlank(),
-                            // 蓝底上的主按钮反转为「白底 + 品牌蓝文字」，与面板同色可读
+                            // 主按钮比面板更深一档的品牌蓝（Blue800），白字：
+                            // 在白底输入浮块与浅蓝面板之间「沉下去」成为收尾动作，
+                            // 而不是又一块浮起来的白。
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.surface,
-                                contentColor = MaterialTheme.colorScheme.primary,
-                                disabledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.35f),
-                                disabledContentColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.55f),
+                                containerColor = Blue800,
+                                contentColor = Color.White,
+                                disabledContainerColor = Blue800.copy(alpha = 0.45f),
+                                disabledContentColor = Color.White.copy(alpha = 0.6f),
                             ),
                         )
                     }
