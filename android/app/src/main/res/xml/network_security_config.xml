@@ -23,6 +23,18 @@
     </domain-config>
 
     <!--
+      平台媒体 CDN：平台下发的媒体资源地址（图片 / 视频 / Live 动态图）可能为 http。
+      这些地址不带账号凭证（媒体文件本身），放行明文只影响媒体下载，不影响后端 Token/Cookie 等
+      凭证的明文传输（那些仍被 base-config 强制 HTTPS）。名单与 MediaDownloader.headersFor
+      的覆盖一致，避免「图片存得下、Live/视频存不下」这类同类问题反复出现。
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">xhscdn.com</domain>
+        <domain includeSubdomains="true">xhsimg.com</domain>
+        <domain includeSubdomains="true">weibocdn.com</domain>
+    </domain-config>
+
+    <!--
       局域网自建服务示例：把 192.168.1.8 换成你的服务器地址后取消注释即可。
       <domain-config cleartextTrafficPermitted="true">
           <domain includeSubdomains="false">192.168.1.8</domain>
