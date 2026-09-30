@@ -69,40 +69,15 @@ class WeiboParser(
             htmlTagRegex.replace(data["text"]?.stringOrNull().orEmpty(), ""),
         ).trim().take(100).ifBlank { "微博正文" }
         val author = data["user"]?.jsonObjectOrNull()?.get("screen_name")?.stringOrNull()
-        val medias = mutableListOf<MediaItemDto>()
 
-        val pageInfo = data["page_info"]?.jsonObjectOrNull()
-        val mediaInfo = pageInfo?.get("media_info")?.jsonObjectOrNull()
-        val videoUrl = mediaInfo?.get("mp4_hd_url")?.stringOrNull()
-            ?: mediaInfo?.get("mp4_sd_url")?.stringOrNull()
-            ?: mediaInfo?.get("stream_url_hd")?.stringOrNull()
-            ?: mediaInfo?.get("stream_url")?.stringOrNull()
-        if (!videoUrl.isNullOrBlank()) {
-            val cover = pageInfo?.get("page_pic")?.stringOrNull()
-            medias += MediaItemDto(kind = "video", url = videoUrl, cover = cover, quality = "hd")
-        }
+        val pics = (data["pics"] as? JsonArray) ?: JsonArray(emptyList())
+        val picIds = (data["pic_ids"] as? JsonArray)?.mapNotNull { it.stringOrNull() } ?: emptyList()
+        val mixIds = (data["mix_media_ids"] as? JsonArray)?.mapNotNull { it.stringOrNull() } ?: emptyList()
 
-        (data["pics"] as? JsonArray)?.forEach { element ->
-            val pic = element.jsonObjectOrNull() ?: return@forEach
-            // original 可能是字符串；large 可能是字符串或 {size, url} 对象（mw2000 大图）
-            val url = pic["original"]?.mediaUrlOrNull()
-                ?: pic["large"]?.mediaUrlOrNull()
-                ?: pic["url"]?.stringOrNull()
-            if (!url.isNullOrBlank()) {
-                // Live 图：type=livephoto 时 videoSrc 为 .mov 短视频直链
-                val liveUrl = if (pic["type"]?.stringOrNull() == "livephoto") {
-                    pic["videoSrc"]?.stringOrNull()?.takeIf { it.isNotBlank() }
-                } else {
-                    null
-                }
-                medias += MediaItemDto(
-                    kind = "image",
-                    url = url,
-                    quality = "original",
-                    live = !liveUrl.isNullOrBlank(),
-                    liveUrl = liveUrl,
-                )
-            }
+        val medias = if (mixIds.isNotEmpty()) {
+            buildMixedMedias(mixIds, pics, picIds)
+        } else {
+            buildPlainMedias(data, pics, picIds)
         }
 
         if (medias.isEmpty()) {
@@ -122,6 +97,119 @@ class WeiboParser(
             medias = medias,
         )
     }
+
+    /** 普通微博：pics 就是完整图集，page_info 的视频（如有）排在最前。 */
+    private fun buildPlainMedias(
+        data: JsonObject,
+        pics: JsonArray,
+        picIds: List<String>,
+    ): List<MediaItemDto> {
+        val medias = mutableListOf<MediaItemDto>()
+        val pageInfo = data["page_info"]?.jsonObjectOrNull()
+        val mediaInfo = pageInfo?.get("media_info")?.jsonObjectOrNull()
+        val videoUrl = mediaInfo?.get("mp4_hd_url")?.stringOrNull()
+            ?: mediaInfo?.get("mp4_sd_url")?.stringOrNull()
+            ?: mediaInfo?.get("stream_url_hd")?.stringOrNull()
+            ?: mediaInfo?.get("stream_url")?.stringOrNull()
+        if (!videoUrl.isNullOrBlank()) {
+            medias += MediaItemDto(
+                kind = "video",
+                url = videoUrl,
+                cover = pageInfo?.get("page_pic")?.stringOrNull(),
+                quality = "hd",
+            )
+        }
+
+        val seen = mutableSetOf<String>()
+        pics.forEach { element ->
+            val pic = element.jsonObjectOrNull() ?: return@forEach
+            pic["pid"]?.stringOrNull()?.let { seen += it }
+            imageFromPic(pic)?.let { medias += it }
+        }
+        // 仅当 pics 确实不完整时才补全，避免个别响应缺 pid 时把图片重复列一遍
+        if (pics.size < picIds.size) {
+            picIds.filterNot { it in seen }.forEach { medias += imageFromPid(it) }
+        }
+        return medias
+    }
+
+    /**
+     * 混合发布（图文 + 视频混排）：接口的 pics / mix_media_ids 只覆盖前 9 个媒体，
+     * 图片完整清单在 pic_ids 里——不补全的话 18 图微博只能解析出 9 个。
+     * mix 中的 t.cn 短链即一个视频，与 pics 里 type=video 的条目按出现顺序一一对应。
+     */
+    private fun buildMixedMedias(
+        mixIds: List<String>,
+        pics: JsonArray,
+        picIds: List<String>,
+    ): List<MediaItemDto> {
+        val byPid = mutableMapOf<String, JsonObject>()
+        val videoPics = mutableListOf<JsonObject>()
+        pics.forEach { element ->
+            val pic = element.jsonObjectOrNull() ?: return@forEach
+            pic["pid"]?.stringOrNull()?.let { byPid[it] = pic }
+            if (pic["type"]?.stringOrNull() == "video") videoPics += pic
+        }
+
+        val medias = mutableListOf<MediaItemDto>()
+        val seen = mutableSetOf<String>()
+        var videoIndex = 0
+        mixIds.forEach { entry ->
+            if (entry.startsWith("http")) {
+                videoPics.getOrNull(videoIndex)?.let { pic ->
+                    videoFromPic(pic)?.let { medias += it }
+                }
+                videoIndex++
+                return@forEach
+            }
+            val image = byPid[entry]?.let { imageFromPic(it) } ?: imageFromPid(entry)
+            medias += image
+            seen += entry
+        }
+        picIds.filterNot { it in seen }.forEach { medias += imageFromPid(it) }
+        return medias
+    }
+
+    /** pics 条目 -> 图片；Live 图的 .mov 短视频一起带上。 */
+    private fun imageFromPic(pic: JsonObject): MediaItemDto? {
+        // original 可能是字符串；large 可能是字符串或 {size, url} 对象（mw2000 大图）
+        val url = pic["original"]?.mediaUrlOrNull()
+            ?: pic["large"]?.mediaUrlOrNull()
+            ?: pic["url"]?.stringOrNull()
+        if (url.isNullOrBlank()) return null
+        // Live 图：type=livephoto 时 videoSrc 为 .mov 短视频直链
+        val liveUrl = if (pic["type"]?.stringOrNull() == "livephoto") {
+            pic["videoSrc"]?.stringOrNull()?.takeIf { it.isNotBlank() }
+        } else {
+            null
+        }
+        return MediaItemDto(
+            kind = "image",
+            url = url,
+            quality = "original",
+            live = !liveUrl.isNullOrBlank(),
+            liveUrl = liveUrl,
+        )
+    }
+
+    /** pics 里的视频条目 -> 视频（videoSrc 即 mp4 直链，large 为封面）。 */
+    private fun videoFromPic(pic: JsonObject): MediaItemDto? {
+        val url = pic["videoSrc"]?.stringOrNull()?.takeIf { it.isNotBlank() } ?: return null
+        return MediaItemDto(
+            kind = "video",
+            url = url,
+            cover = pic["large"]?.mediaUrlOrNull() ?: pic["url"]?.stringOrNull(),
+            quality = "hd",
+        )
+    }
+
+    /** 接口未返回明细的图片（混合发布第 10 个媒体起）按 pic_id 拼原图直链。 */
+    private fun imageFromPid(pid: String): MediaItemDto =
+        MediaItemDto(
+            kind = "image",
+            url = "https://wx1.sinaimg.cn/large/$pid.jpg",
+            quality = "original",
+        )
 
     /**
      * 微博正文是 HTML 片段，剥掉标签后仍需解码实体，

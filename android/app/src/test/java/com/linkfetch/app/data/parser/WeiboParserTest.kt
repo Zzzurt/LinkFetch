@@ -94,6 +94,67 @@ class WeiboParserTest {
     }
 
     @Test
+    fun completesMixedPostMediaBeyondFirstNineTiles() = runBlocking {
+        val statusId = "Rkw7rC72F"
+        server.enqueue(
+            MockResponse().setBody(
+                """
+                {
+                  "data": {
+                    "text": "混合发布",
+                    "user": {"screen_name": "作者"},
+                    "pic_num": 4,
+                    "pic_ids": ["pidA", "pidB", "pidC", "pidD"],
+                    "mix_media_ids": ["pidA", "http://t.cn/AVideo1", "pidB", "http://t.cn/AVideo2"],
+                    "pics": [
+                      {"pid": "pidA", "url": "https://wx1.sinaimg.cn/orj360/a.jpg"},
+                      {
+                        "pid": "poster1",
+                        "type": "video",
+                        "videoSrc": "https://f.video.weibocdn.com/v1.mp4",
+                        "large": {"url": "https://wx1.sinaimg.cn/large/poster1.jpg"}
+                      },
+                      {
+                        "pid": "pidB",
+                        "type": "livephoto",
+                        "videoSrc": "https://livephoto.weibo.cn/b.mov",
+                        "large": {"url": "https://wx2.sinaimg.cn/mw2000/b.jpg"}
+                      },
+                      {
+                        "pid": "poster2",
+                        "type": "video",
+                        "videoSrc": "https://f.video.weibocdn.com/v2.mp4",
+                        "url": "https://wx3.sinaimg.cn/orj360/poster2.jpg"
+                      }
+                    ],
+                    "page_info": {
+                      "page_pic": "https://wx1.sinaimg.cn/large/poster1.jpg",
+                      "media_info": {"stream_url_hd": "https://f.video.weibocdn.com/v1-540p.mp4"}
+                    }
+                  }
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = parser().parse(server.url("/6238113311/$statusId").toString())
+
+        assertEquals("mixed", result.type)
+        // 前 9 个媒体按 mix 顺序还原，第 10 个起用 pic_ids 补全（此前只会返回前 9 个）
+        assertEquals(6, result.medias.size)
+        assertEquals(listOf("image", "video", "image", "video", "image", "image"), result.medias.map { it.kind })
+        assertEquals("https://f.video.weibocdn.com/v1.mp4", result.videos[0].url)
+        assertEquals("https://wx1.sinaimg.cn/large/poster1.jpg", result.videos[0].cover)
+        assertEquals("https://f.video.weibocdn.com/v2.mp4", result.videos[1].url)
+        // Live 图在前 9 个媒体内保留 .mov 直链
+        assertTrue(result.images[1].live)
+        assertEquals("https://livephoto.weibo.cn/b.mov", result.images[1].liveUrl)
+        // 第 10 个媒体起只有 pic_id，按 id 拼原图直链
+        assertEquals("https://wx1.sinaimg.cn/large/pidC.jpg", result.images[2].url)
+        assertEquals("https://wx1.sinaimg.cn/large/pidD.jpg", result.images[3].url)
+    }
+
+    @Test
     fun sendsXRequestedWithHeader() = runBlocking {
         server.enqueue(
             MockResponse().setBody("""{"data":{"text":"hi","pics":[{"url":"https://wx4.sinaimg.cn/large/a.jpg"}]}}"""),
