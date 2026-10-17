@@ -43,3 +43,7 @@ CODE_REVIEW_*.md
 UI_REVIEW_*.md
 # 内部 UI 设计方案与提案（含未采纳的备选方案，实施后再决定是否公开）
 UI_DESIGN_*.md
+# 设计过程稿与效果图（仅本地，不入库）
+design/
+# README 截图等文档用图片（仅本地，不入库）
+docs/

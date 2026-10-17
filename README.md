@@ -1,22 +1,65 @@
-# 链取（LinkFetch）
+# 链取 · LinkFetch
 
-**当前版本：v1.8.1（versionCode 31）**
+**粘贴链接，取回原片。** 从某书 / 某音 / 某博 / 某推 取回无水印的原图与原视频，按天归档，原样保存到相册。
 
-Android 应用：粘贴或自动识别**某书 / 某音 / 某博 / 某推**链接，一键提取**无水印**图片和视频并保存到相册。
+![version](https://img.shields.io/badge/version-1.8.3-0A0A0A?style=flat-square)
+![license](https://img.shields.io/badge/license-Apache--2.0-0A0A0A?style=flat-square)
+![android](https://img.shields.io/badge/Android-8.0%2B-0A0A0A?style=flat-square)
+![mode](https://img.shields.io/badge/direct-no%20server-0A0A0A?style=flat-square)
 
-**默认「App 直连」模式：无需服务器、无需任何配置，安装 APK 即可使用。**（某书、某音、某博已验证可直连；某推 走其 syndication 公开接口，需要能访问海外网络。）
+## 界面
 
-> ⚠️ 合规说明：去水印下载涉及平台用户协议与内容版权，请合理使用，勿用于批量爬取或对他人内容进行分发牟利。本项目基于 [Apache-2.0](LICENSE) 许可证开源，© 2026 Zzzurt。
+<table>
+<tr>
+<td align="center"><img src="https://github.com/Zzzurt/LinkFetch/releases/download/v1.8.3/home.png" width="200" alt="首页"><br><sub>首页</sub></td>
+<td align="center"><img src="https://github.com/Zzzurt/LinkFetch/releases/download/v1.8.3/history.png" width="200" alt="历史"><br><sub>历史</sub></td>
+<td align="center"><img src="https://github.com/Zzzurt/LinkFetch/releases/download/v1.8.3/result.png" width="200" alt="结果"><br><sub>解析结果</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="https://github.com/Zzzurt/LinkFetch/releases/download/v1.8.3/settings.png" width="200" alt="设置"><br><sub>设置</sub></td>
+<td align="center"><img src="https://github.com/Zzzurt/LinkFetch/releases/download/v1.8.3/dark.png" width="200" alt="深色"><br><sub>深色模式</sub></td>
+<td align="center"><img src="https://github.com/Zzzurt/LinkFetch/releases/download/v1.8.3/empty.png" width="200" alt="空状态"><br><sub>空状态</sub></td>
+</tr>
+</table>
+
+## 功能
+
+- **四平台**：某书 / 某音 / 某博 / 某推
+- **原图原片**：取平台原始文件，不经过二次压缩
+- **粘贴即读**：自动识别剪贴板与链接来源
+- **按天归档**：历史记录本机保存，可批量选择删除
+- **深色模式**：同一套层级，夜间自动切换
+- **无广告、无统计、无账号体系**
+
+## 下载
+
+前往 [Releases](https://github.com/Zzzurt/LinkFetch/releases/latest) 下载 `LinkFetch-v1.8.3.apk`（约 3.0 MB），安装即用。
+
+- 最低系统 Android 8.0（API 26），默认直连，无需服务器
+- 某书 / 某音 / 某博 已验证可直连；某推 需能访问海外网络
+- 受限内容可在「设置 → 平台凭证」填入 Cookie 提升成功率
 
 ## 使用
 
-### 安装即用（默认，推荐）
+### 安装即用
 
-从 [Releases](https://github.com/Zzzurt/LinkFetch/releases/latest) 下载最新的 `LinkFetch-v{x.y.z}.apk` 安装即可，**无需服务器、无需任何配置**。
+打开 App，粘贴链接或整段分享文案即可解析；支持单张保存或「保存全部」。
 
-打开 App 直接粘贴链接或整段分享文案即可解析。部分受限内容可在「设置 → 平台 Cookie」中填入对应平台的 Cookie 提升成功率。
+### 自建服务器（可选）
 
-### 从源码构建（开发者）
+直连失效时，在「设置 → 解析方式」切换为自建服务器：
+
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+set API_TOKEN=<自定义口令>
+.venv\Scripts\python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+然后填写「后端地址」与同一个「API Token」。局域网 `http://` 需先加入 `android/app/src/main/res/xml/network_security_config.xml`。
+
+### 从源码构建
 
 ```bash
 cd android
@@ -24,79 +67,14 @@ cd android
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
-克隆仓库后可直接构建 debug 包：当仓库内不存在 `.keystore/debug.keystore`（该目录已 gitignore）时，Gradle 会回退到 Android SDK 自动生成的默认调试密钥，因此无需自备密钥即可编译。
+未配置 `.keystore/debug.keystore` 时会回退到 SDK 默认调试密钥，无需自备签名即可编译。
 
-> 发布正式包需要自行配置签名（密钥与口令不随仓库分发）；未配置时 `assembleRelease` 会产出未签名 APK 并给出警告。
+## 已知限制
 
-### 自建服务器模式（备选）
+- **某推 需海外网络**，否则会在 App 内给出明确错误提示
+- **平台接口易变**：直连失败时优先切换自建服务器或更新 App
+- **直连模式无热修复**：平台改版需要发布新 APK
 
-当某平台直连失效时，可在「设置 → 解析方式」切换为自建服务器：
+> ⚠️ 去水印下载涉及平台用户协议与内容版权，请合理使用，勿用于批量爬取或分发牟利。
 
-```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
-set API_TOKEN=<自定义口令>          # 必填，详见「安全默认值」
-.venv\Scripts\python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-或使用 Docker：`docker compose up -d`。然后在 App 设置中把「后端地址」填成服务器地址，并在「API Token」中填入同一个口令。
-
-> **局域网 http 需要显式放行**：App 默认禁止明文流量，`http://192.168.x.x:8000` 会被拦截。
-> 请把该地址加入 `android/app/src/main/res/xml/network_security_config.xml`（文件内有示例），
-> 或改用 HTTPS。
-
-## 安全默认值
-
-以下都是**刻意设置的默认行为**，改动前请先了解后果：
-
-| 项 | 默认行为 | 说明 |
-| --- | --- | --- |
-| 明文流量 | 仅允许本机 / 内网地址使用 `http://`，公网地址必须 HTTPS | Token 与平台 Cookie 属账号级凭证，明文发出即可被同网段嗅探 |
-| 后端鉴权 | 未配置 `API_TOKEN` 时拒绝所有解析请求（403/503） | 该接口可带任意 Cookie 代发请求，无鉴权暴露在公网等于开放代理 |
-| 跨域 | 默认不开放 CORS | 移动端不依赖同源策略；如需网页调用，用 `CORS_ALLOW_ORIGINS` 列出具体来源 |
-| 系统备份 | DataStore（服务器地址 / Token / Cookie）不参与云备份与换机迁移 | 避免凭证随备份外泄；历史记录仍会备份 |
-| 设置页显示 | Token 与 Cookie 默认掩码，可点击切换明文；提供「清空全部凭证」 | 防止肩窥与录屏泄露 |
-
-## 错误码
-
-后端与本地直连使用同一套错误码：
-
-| code | 含义 |
-| --- | --- |
-| `unsupported_link` | 非某书 / 某音 / 某博 / 某推 链接 |
-| `parse_failed` | 解析失败、链接失效、页面结构变化 |
-| `rate_limited` | 平台风控，稍后重试 |
-| `network_error` | 无法连接平台服务器 |
-
-## 测试
-
-```bash
-# Android 单元测试（含本地解析器 mock 用例）
-cd android && .\gradlew.bat :app:testDebugUnitTest
-
-# 后端测试
-cd backend && .venv\Scripts\python -m pytest -q
-
-# 真实网络验证（可选，需要外网）——会真实请求各平台
-cd android
-set LINKFETCH_REAL_TEST=1
-.\gradlew.bat :app:testDebugUnitTest --tests "*RealLinkManualTest"
-```
-
-真实网络用例的环境依赖（不满足时**跳过**而不是失败，避免把环境限制误判成解析器回归）：
-
-| 平台 | 前置条件 |
-| --- | --- |
-| 小红书 / 微博 | 可直连即可 |
-| X | 需要能访问海外网络（探测不通过则跳过） |
-| 抖音 | 需 `set LINKFETCH_DOUYIN_COOKIE=<浏览器 Cookie>`；免 Cookie 的分享页已不再内嵌作品数据，设备侧实际依赖 WebView 兜底，无法在 JVM 单测中覆盖 |
-
-## 已知限制与说明
-- **某推 平台需海外网络**：解析 某推 链接时需要挂代理或使用可访问海外网络的网络环境；某推 链接在 App 内会给出明确错误提示。
-
-- **平台接口易变**：某书 / 某音 / 某博 / 某推 会调整接口与风控策略，直连失败时优先尝试「自建服务器模式」或更新 App。
-- **直连模式无热修复**：平台改版需要发布新 APK；服务器模式则只需更新后端。
-- **targetSdk 33**：本机工具链为 JDK 11 + Gradle 7.5 + Android SDK 33，工程按此配置。
-- **v1 仅单链接解析**：批量解析（多行链接）留作 v2 扩展。
-
+[Apache License 2.0](LICENSE) © 2026 Zzzurt
