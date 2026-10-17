@@ -37,13 +37,17 @@ object Radii {
      * 图片网格单元。结果页定稿为「相册式」：圆角只留一点点，配合 2dp 间隙让整组图片连成一片，
      * 而不是各自成为一张带底的卡片（卡片感会把画面切碎、削弱内容本身）。
      */
-    val grid = RoundedCornerShape(4.dp)
+    val grid = RoundedCornerShape(6.dp)
     /** 小元素、缩略图 */
     val small = RoundedCornerShape(8.dp)
-    /** 输入框、小容器 */
-    val field = RoundedCornerShape(12.dp)
+    /** 输入框、小容器、主按钮 */
+    val field = RoundedCornerShape(8.dp)
     /** 卡片、对话框 */
-    val card = RoundedCornerShape(16.dp)
+    val card = RoundedCornerShape(12.dp)
+    /** 筛选标签 */
+    val chip = RoundedCornerShape(7.dp)
+    /** 悬浮 Dock */
+    val dock = RoundedCornerShape(18.dp)
     val pill = RoundedCornerShape(50)
 }
 

@@ -3,9 +3,10 @@ package com.linkfetch.app.ui.history
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -29,21 +31,15 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,10 +51,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -67,11 +63,11 @@ import com.linkfetch.app.data.AppContainer
 import com.linkfetch.app.data.db.HistoryEntity
 import com.linkfetch.app.ui.components.CoverPlaceholder
 import com.linkfetch.app.ui.components.EmptyState
+import com.linkfetch.app.ui.components.GhostPill
 import com.linkfetch.app.ui.components.PageHeader
-import com.linkfetch.app.ui.components.PlatformBadge
-import com.linkfetch.app.ui.components.ShimmerImage
-import com.linkfetch.app.ui.components.TypeTag
 import com.linkfetch.app.ui.components.ScreenFadeIn
+import com.linkfetch.app.ui.components.ShimmerImage
+import com.linkfetch.app.ui.components.SquareCheck
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.StrokeColors
@@ -85,7 +81,7 @@ import java.time.ZoneId
 // ExperimentalFoundationApi：用到的是 LazyListScope.stickyHeader（分组标题吸顶）。
 // 注意它是 LazyListScope 的**接口成员**、不是顶层扩展函数，所以在 LazyColumn 的 scope 里
 // 直接可用，不需要也不能 import（写过一次 import，编译器报 Unresolved reference）。
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HistoryScreen(
     container: AppContainer,
@@ -110,6 +106,7 @@ fun HistoryScreen(
     // 显示数字的目的不是"信息更丰富"，而是让用户在**点击之前**就知道这个筛选是空的 ——
     // 省掉一次「点进去才发现没有」。因此 0 也要显示出来。
     val platformCounts = remember(items) { items.groupingBy { it.platform }.eachCount() }
+    val savedTotal = remember(items) { items.sumOf { it.downloadedCount } }
     val snackbarHostState = remember { SnackbarHostState() }
     // 单条删除确认（与批量删除一致，防误删）
     var confirmDelete by remember { mutableStateOf<HistoryEntity?>(null) }
@@ -126,28 +123,34 @@ fun HistoryScreen(
     ScreenFadeIn(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
             PageHeader(
-                title = if (viewModel.selectionMode) "已选 ${viewModel.selectedIds.size} 项" else "历史记录",
-                modifier = Modifier.padding(horizontal = Spacing.screen, vertical = Spacing.md),
-            ) {
-                if (viewModel.selectionMode) {
-                    TextButton(onClick = viewModel::clearSelection) {
-                        Text("取消")
+                title = if (viewModel.selectionMode) "已选 ${viewModel.selectedIds.size} 项" else "历史",
+                subtitle = if (viewModel.selectionMode) {
+                    "点选条目后可批量删除"
+                } else {
+                    "${items.size} 条记录 · 已存 $savedTotal 个文件"
+                },
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 16.dp),
+                actions = {
+                    if (viewModel.selectionMode) {
+                        GhostPill(text = "取消", onClick = viewModel::clearSelection)
+                    } else if (items.isNotEmpty()) {
+                        // 常驻的多选入口：长按虽然也能进多选，但界面上没有任何提示，多数用户发现不了。
+                        // 这里只留「选择」一个动作 —— 进去之后可以全选再删。
+                        GhostPill(text = "选择", onClick = viewModel::enterSelection)
                     }
-                } else if (items.isNotEmpty()) {
-                    // 常驻的多选入口：长按虽然也能进多选，但界面上没有任何提示，多数用户发现不了。
-                    // 这里只留「选择」一个动作 —— 进去之后可以全选再删，原先并排的「清空历史」
-                    // 图标与它功能重叠（同一件事的两条路径），却让右上角长期挂着两个入口。
-                    TextButton(onClick = viewModel::enterSelection) {
-                        Text("选择")
-                    }
-                }
-            }
+                },
+            )
 
-            FlowRow(
+            Spacer(Modifier.height(14.dp))
+
+            // 平台筛选：一排细边小胶囊，选中是实心墨块；数字压缩成上标式小字，
+            // 五个筛选项刚好排满一行，不再折行。
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = Spacing.screen),
-                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 listOf(
                     "all" to "全部",
@@ -157,29 +160,17 @@ fun HistoryScreen(
                     "x" to "X",
                 ).forEach { (key, label) ->
                     val count = if (key == "all") items.size else platformCounts[key] ?: 0
-                    FilterChip(
+                    HistoryChip(
+                        label = label,
+                        count = count,
                         selected = viewModel.filter == key,
                         onClick = { viewModel.onFilterChange(key) },
-                        label = { Text("$label $count") },
-                        modifier = Modifier.padding(vertical = Spacing.xs),
-                        // 选中态统一走品牌容器色，不再用平台本体色。
-                        // 平台色在别处（PlatformBadge）表示"这是哪个平台"，在这里却被拿去表示
-                        // "已选中" —— 同一个颜色两种含义；而且橙/青底色亮、红/黑暗度高，
-                        // 字色还得随选中项在深字/白字之间反复反转，同一行里文字颜色会变。
-                        // 颜色只承担两种含义（品牌/状态、平台身份），"选中"交给容器层级表达。
-                        //
-                        // border 保持不传：M3 默认已是「未选中 1dp outline / 选中 0dp」
-                        // （见 FilterChipTokens.FlatUnselectedOutlineWidth），形状差异本来就有，
-                        // 不需要自己再补一层描边。
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        ),
                     )
                 }
             }
-            Spacer(Modifier.height(Spacing.sm))
-    
+
+            Spacer(Modifier.height(6.dp))
+
             val visible = viewModel.visibleItems
             val allSelected = visible.isNotEmpty() && visible.all { it.id in viewModel.selectedIds }
             if (visible.isEmpty()) {
@@ -191,9 +182,9 @@ fun HistoryScreen(
                 ) {
                     if (items.isEmpty()) {
                         EmptyState(
-                            title = "还没有解析记录",
-                            message = "解析成功的内容会自动记录在这里",
-                            actionText = "去解析",
+                            title = "还没有取回记录",
+                            message = "在首页粘贴一条分享链接，\n取回的原图会按天归档在这里。",
+                            actionText = "去首页粘贴",
                             onAction = onGoHome,
                         )
                     } else {
@@ -212,39 +203,33 @@ fun HistoryScreen(
                         .fillMaxWidth(),
                     // 水平内边距从 contentPadding 下移到各 item 内部：吸顶分组头必须铺满屏宽，
                     // 否则吸顶时左右各 16dp 会露出正在滚动的卡片。
-                    contentPadding = PaddingValues(bottom = Spacing.lg),
-                    verticalArrangement = Arrangement.spacedBy(Spacing.md),
+                    contentPadding = PaddingValues(bottom = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     grouped.forEach { (label, group) ->
                         // 分组标题吸顶：长列表滚到中段时仍能看到这一段属于哪天。
-                        // 此前标题会随内容滚走，看到一张卡片无法判断它是今天还是上周的。
                         stickyHeader(key = "header-$label") {
-                            // v1.8：分组标题从「黑字条」改为「小字 + 引线」（沿用 SectionHeader 语言）——
-                            // 吸顶时仍保持「这段属于哪天」的分组信息，但不再像一块标题栏那样压着列表。
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     // 吸顶的两个硬要求不变：不透明底色 + 铺满屏宽
                                     .background(MaterialTheme.colorScheme.background)
-                                    .padding(horizontal = Spacing.screen)
-                                    .padding(top = Spacing.md, bottom = Spacing.xs),
+                                    .padding(horizontal = 20.dp)
+                                    .padding(top = 14.dp, bottom = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Text(
                                     text = label,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                Spacer(Modifier.width(Spacing.md))
-                                Divider(
-                                    modifier = Modifier.weight(1f),
-                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        letterSpacing = 1.8.sp,
+                                    ),
+                                    color = TextColors.muted,
                                 )
                             }
                         }
                         items(group, key = { it.id }) { entity ->
-                            Box(modifier = Modifier.padding(horizontal = Spacing.screen)) {
-                                HistoryCard(
+                            Box(modifier = Modifier.padding(horizontal = 20.dp)) {
+                                HistoryRow(
                                     entity = entity,
                                     selectionMode = viewModel.selectionMode,
                                     selected = entity.id in viewModel.selectedIds,
@@ -266,32 +251,47 @@ fun HistoryScreen(
                     }
                 }
             }
-    
+
             // 多选模式：底部操作条（全选 / 删除），拇指可达
             if (viewModel.selectionMode) {
-                Surface(
-                    tonalElevation = 3.dp,
-                    color = MaterialTheme.colorScheme.surface,
-                ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant),
+                    )
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = Spacing.screen, vertical = Spacing.xs),
+                            .background(MaterialTheme.colorScheme.surface)
+                            .padding(horizontal = 20.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        TextButton(onClick = viewModel::selectAllOrClear) {
-                            Text(if (allSelected) "取消全选" else "全选")
-                        }
+                        GhostPill(
+                            text = if (allSelected) "取消全选" else "全选",
+                            onClick = viewModel::selectAllOrClear,
+                        )
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = viewModel::requestDeleteSelected) {
+                        Row(
+                            modifier = Modifier
+                                .clip(Radii.pill)
+                                .clickable(onClick = viewModel::requestDeleteSelected)
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Icon(
                                 Icons.Filled.Delete,
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(18.dp),
+                                modifier = Modifier.size(16.dp),
                             )
-                            Spacer(Modifier.width(4.dp))
-                            Text("删除", color = MaterialTheme.colorScheme.error)
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "删除",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.error,
+                            )
                         }
                     }
                 }
@@ -307,13 +307,12 @@ fun HistoryScreen(
         )
     }
 
-    // 「清空历史」入口已移除：它与「选择 → 全选 → 删除」是同一件事的两条路径。
-    // 现在删除统一走多选流程，因此这里也不再需要单独的二次确认弹窗。
+    // 删除统一走多选流程，因此这里也不再需要单独的「清空历史」确认弹窗。
 
     if (viewModel.confirmDeleteSelected) {
         AlertDialog(
             onDismissRequest = { viewModel.handleDeleteSelected(false) },
-            shape = MaterialTheme.shapes.large,
+            shape = Radii.card,
             title = { Text("删除所选记录？") },
             text = { Text("将删除 ${viewModel.selectedIds.size} 条记录，删除后无法恢复。") },
             confirmButton = {
@@ -332,7 +331,7 @@ fun HistoryScreen(
     confirmDelete?.let { entity ->
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
-            shape = MaterialTheme.shapes.large,
+            shape = Radii.card,
             title = { Text("删除这条记录？") },
             text = {
                 Text(
@@ -360,6 +359,56 @@ fun HistoryScreen(
     }
 }
 
+/** 筛选胶囊：细边 + 小字 + 计数，选中态反成黑底白字 */
+@Composable
+private fun HistoryChip(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .height(32.dp)
+            .clip(Radii.chip)
+            .background(
+                if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.surface,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) MaterialTheme.colorScheme.onSurface else StrokeColors.card,
+                shape = Radii.chip,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp),
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) {
+                MaterialTheme.colorScheme.surface
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            text = count.toString().padStart(2, '0'),
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontSize = 8.5.sp,
+                letterSpacing = 0.6.sp,
+            ),
+            color = if (selected) {
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
+            } else {
+                TextColors.muted
+            },
+        )
+    }
+}
+
 /** 按日期分组：今天 / 昨天 / M月d日，组内保持时间倒序 */
 private fun groupByDay(items: List<HistoryEntity>): List<Pair<String, List<HistoryEntity>>> {
     val today = LocalDate.now()
@@ -370,10 +419,11 @@ private fun groupByDay(items: List<HistoryEntity>): List<Pair<String, List<Histo
         .entries
         .sortedByDescending { it.key }
         .map { (date, list) ->
+            val dateLabel = "${date.monthValue}月${date.dayOfMonth}日"
             val label = when (date) {
-                today -> "今天"
-                today.minusDays(1) -> "昨天"
-                else -> "${date.monthValue}月${date.dayOfMonth}日"
+                today -> "$dateLabel · 今天"
+                today.minusDays(1) -> "$dateLabel · 昨天"
+                else -> dateLabel
             }
             label to list
         }
@@ -381,7 +431,7 @@ private fun groupByDay(items: List<HistoryEntity>): List<Pair<String, List<Histo
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun HistoryCard(
+private fun HistoryRow(
     entity: HistoryEntity,
     selectionMode: Boolean,
     selected: Boolean,
@@ -392,18 +442,28 @@ private fun HistoryCard(
     onReparse: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    // 每张卡片各自持有一个下拉菜单的展开状态
+    // 每行各自持有一个下拉菜单的展开状态
     var menuOpen by remember { mutableStateOf(false) }
-    Card(
+    val platform = Platform.fromKey(entity.platform)
+    val mediaCount = remember(entity.mediaJson) { entity.mediaCount() }
+    Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clip(Radii.card)
+            .background(
+                if (selected) {
+                    MaterialTheme.colorScheme.surfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+            )
+            .border(1.dp, StrokeColors.card, Radii.card)
             .then(
                 if (selectionMode) {
-                    // 多选态：用 checkbox 语义，读屏才能读出「已选中 / 未选中」并给出切换动作；
-                    // 原先只有 combinedClickable，读屏完全感知不到选中状态
+                    // 多选态：用 checkbox 语义，读屏才能读出「已选中 / 未选中」并给出切换动作
                     Modifier.toggleable(
                         value = selected,
-                        role = Role.Checkbox,
+                        role = androidx.compose.ui.semantics.Role.Checkbox,
                         onValueChange = { onToggle() },
                     )
                 } else {
@@ -414,161 +474,136 @@ private fun HistoryCard(
                         onLongClick = onLongPress,
                     )
                 },
-            ),
-        shape = Radii.card,
-        colors = CardDefaults.cardColors(
-            containerColor = if (selected) {
-                MaterialTheme.colorScheme.primaryContainer
-            } else {
-                MaterialTheme.colorScheme.surface
-            },
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        // 描边两套主题统一走 StrokeColors.card：此前浅色侧没有描边，白卡只靠 1dp 阴影
-        // 压在 Slate50 页面上（约 1.045:1），一屏卡片边界几乎不可见。
-        border = BorderStroke(1.dp, StrokeColors.card),
+            )
+            .padding(11.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.padding(Spacing.md),
-            verticalAlignment = Alignment.CenterVertically,
+        if (selectionMode) {
+            Box(modifier = Modifier.padding(start = 1.dp, end = 11.dp)) {
+                SquareCheck(checked = selected, size = 18.dp)
+            }
+        }
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(Radii.small),
         ) {
-            if (selectionMode) {
+            if (entity.coverUrl != null) {
+                // 加载失败也走同一个占位：封面字段可能存的是视频地址（旧记录尤其常见），
+                // 那种情况 Coil 必然失败，不该显示成一块看不出所以然的灰。
+                ShimmerImage(
+                    model = entity.coverUrl,
+                    modifier = Modifier.fillMaxSize(),
+                    shape = Radii.small,
+                    onError = { CoverPlaceholder(platform, badgeSize = 22) },
+                )
+            } else {
+                CoverPlaceholder(platform, badgeSize = 22)
+            }
+            if (entity.downloadedCount > 0) {
+                SquareCheck(
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(3.dp),
+                    size = 14.dp,
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = entity.title,
+                style = MaterialTheme.typography.titleSmall.copy(fontSize = 13.5.sp),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(5.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(22.dp)
+                        .size(4.dp)
                         .clip(CircleShape)
-                        .background(
-                            if (selected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            },
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (selected) {
+                        .background(MaterialTheme.colorScheme.onSurface),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = buildString {
+                        platform?.let { append(it.label).append(" · ") }
+                        if (entity.type == "video") {
+                            append("视频")
+                        } else {
+                            if (mediaCount > 0) append("$mediaCount 张") else append("媒体")
+                        }
+                        if (entity.downloadedCount > 0) {
+                            append(" · 已存 ${entity.downloadedCount}")
+                        }
+                        append(" · ")
+                        append(formatHistoryTime(entity.createdAt).substringAfterLast(" "))
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                    color = TextColors.muted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (!selectionMode) {
+            if (reParsing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 1.5.dp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            } else {
+                Box {
+                    IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(30.dp)) {
                         Icon(
-                            Icons.Filled.Check,
-                            contentDescription = "已选",
-                            tint = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(16.dp),
+                            Icons.Filled.MoreVert,
+                            contentDescription = "更多操作",
+                            tint = TextColors.muted,
+                            modifier = Modifier.size(18.dp),
                         )
                     }
-                }
-                Spacer(Modifier.width(Spacing.md))
-            }
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(Radii.small),
-            ) {
-                val platform = Platform.fromKey(entity.platform)
-                if (entity.coverUrl != null) {
-                    // 加载失败也走同一个占位：封面字段可能存的是视频地址（旧记录尤其常见，
-                    // 见 HomeViewModel.saveHistory 的封面选取），那种情况 Coil 必然失败，
-                    // 不该显示成一块看不出所以然的灰。
-                    ShimmerImage(
-                        model = entity.coverUrl,
-                        modifier = Modifier.fillMaxSize(),
-                        shape = Radii.small,
-                        onError = { CoverPlaceholder(platform, badgeSize = 26) },
-                    )
-                } else {
-                    CoverPlaceholder(platform, badgeSize = 26)
-                }
-            }
-            Spacer(Modifier.width(Spacing.md))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = entity.title,
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    Spacer(Modifier.width(Spacing.sm))
-                    TypeTag(entity.type)
-                }
-                Spacer(Modifier.height(4.dp))
-                // v1.8 第二轮：平台身份从 6dp 彩点改为带文字的徽标，
-                // 与首页/结果页统一同平台图形语言；时间与保存数保留在文字里
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Platform.fromKey(entity.platform)?.let { platform ->
-                        PlatformBadge(platform, size = 18)
-                        Spacer(Modifier.width(Spacing.sm))
-                    }
-                    Text(
-                        text = buildString {
-                            append(formatHistoryTime(entity.createdAt))
-                            if (entity.downloadedCount > 0) append(" · 已保存 ${entity.downloadedCount} 张")
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            if (!selectionMode) {
-                if (reParsing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    // 「重新解析」与「删除」收进一个下拉菜单。
-                    // 原先两个同色同权的图标按钮常驻在每条卡片右侧 —— 一屏七八条就是十几个
-                    // 可点区域，其中还有一个破坏性操作，既吵又容易误触。
-                    // 收进菜单后卡片右侧只剩一个入口，删除也不再与安全操作平起平坐。
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(
-                                Icons.Filled.MoreVert,
-                                contentDescription = "更多操作",
-                                tint = TextColors.muted,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = menuOpen,
-                            onDismissRequest = { menuOpen = false },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("重新解析") },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Filled.Refresh,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                },
-                                onClick = {
-                                    menuOpen = false
-                                    onReparse()
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = {
-                                    Text("删除", color = MaterialTheme.colorScheme.error)
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Filled.Delete,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(20.dp),
-                                    )
-                                },
-                                onClick = {
-                                    menuOpen = false
-                                    onDelete()
-                                },
-                            )
-                        }
+                    DropdownMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = { menuOpen = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("重新解析") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Filled.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            },
+                            onClick = {
+                                menuOpen = false
+                                onReparse()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("删除", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Filled.Delete,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            },
+                            onClick = {
+                                menuOpen = false
+                                onDelete()
+                            },
+                        )
                     }
                 }
             }
         }
     }
 }
+
+/** 媒体数量：只用于列表里的一行说明，不做业务判断 */
+private fun HistoryEntity.mediaCount(): Int = runCatching {
+    org.json.JSONObject(mediaJson).optJSONArray("medias")?.length() ?: 0
+}.getOrDefault(0)

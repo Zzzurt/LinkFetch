@@ -1,29 +1,33 @@
 package com.linkfetch.app.ui.navigation
 
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,10 +38,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -50,11 +59,11 @@ import com.linkfetch.app.ui.history.HistoryScreen
 import com.linkfetch.app.ui.home.HomeScreen
 import com.linkfetch.app.ui.result.ResultScreen
 import com.linkfetch.app.ui.settings.SettingsScreen
-import com.linkfetch.app.ui.theme.Blue300
-import com.linkfetch.app.ui.theme.Blue50
-import com.linkfetch.app.ui.theme.Blue600
-import com.linkfetch.app.ui.theme.Blue700
+import com.linkfetch.app.ui.theme.InkColors
 import com.linkfetch.app.ui.theme.PageMaxWidth
+import com.linkfetch.app.ui.theme.Radii
+import com.linkfetch.app.ui.theme.StrokeColors
+import com.linkfetch.app.ui.theme.TextColors
 
 object Route {
     const val HOME = "home"
@@ -95,47 +104,24 @@ fun AppNavHost(container: AppContainer) {
     val currentRoute = backStackEntry?.destination?.route
 
     // 上一次停留的底部 Tab 序号：只用来给页面入场位移定方向。
-    // 必须在 NavTab 的 onClick 里先行记录，而不是靠 currentRoute 变化后的副作用 ——
+    // 必须在 DockItem 的 onClick 里先行记录，而不是靠 currentRoute 变化后的副作用 ——
     // 副作用要等新页面组合完成才会跑，那时方向已经被读走了。
     var lastTabIndex by remember { mutableStateOf(0) }
     val recordCurrentTab: () -> Unit = { lastTabIndex = tabIndexOf(currentRoute) }
     val enterFromLeft = tabIndexOf(currentRoute) < lastTabIndex
+    val showDock = currentRoute == Route.HOME ||
+        currentRoute == Route.HISTORY ||
+        currentRoute == Route.SETTINGS
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            if (currentRoute == Route.HOME || currentRoute == Route.HISTORY || currentRoute == Route.SETTINGS) {
-                // 高度用 heightIn(min) 而不是 height：M3 默认 80dp，压缩到 72dp 是为了手机竖屏
-                // 多留一点内容高度；但固定高度在大字体（fontScale 2.0）下会把图标与文字压扁，
-                // 所以给一个下限、允许 M3 按内容撑开。
-                // 当前窗口不是 edge-to-edge，系统栏 inset 被系统消费为 0，72dp 不会被挤压；
-                // ⚠️ 升 targetSdk 35 时 Android 15 会强制 edge-to-edge，inset 变成真实值 ——
-                //    届时需去掉这个下限并给四个页面补 inset 处理。
-                NavigationBar(modifier = Modifier.heightIn(min = 72.dp)) {
-                    NavTab(
-                        navController = navController,
-                        route = Route.HOME,
-                        label = "首页",
-                        icon = Icons.Filled.Home,
-                        selected = currentRoute == Route.HOME,
-                        onBeforeNavigate = recordCurrentTab,
-                    )
-                    NavTab(
-                        navController = navController,
-                        route = Route.HISTORY,
-                        label = "历史",
-                        icon = Icons.Filled.List,
-                        selected = currentRoute == Route.HISTORY,
-                        onBeforeNavigate = recordCurrentTab,
-                    )
-                    NavTab(
-                        navController = navController,
-                        route = Route.SETTINGS,
-                        label = "设置",
-                        icon = Icons.Filled.Settings,
-                        selected = currentRoute == Route.SETTINGS,
-                        onBeforeNavigate = recordCurrentTab,
-                    )
-                }
+            if (showDock) {
+                FloatingDock(
+                    currentRoute = currentRoute,
+                    onBeforeNavigate = recordCurrentTab,
+                    onNavigate = { route -> navController.navigateToTab(route) },
+                )
             }
         },
     ) { innerPadding ->
@@ -163,6 +149,7 @@ fun AppNavHost(container: AppContainer) {
                         HomeScreen(
                             container = container,
                             onOpenResult = { navController.navigate(Route.RESULT) },
+                            onOpenHistory = { navController.navigateToTab(Route.HISTORY) },
                             // 与底部 Tab 走同一套导航（navigateToTab）
                             onOpenSettings = { navController.navigateToTab(Route.SETTINGS) },
                         )
@@ -190,89 +177,136 @@ fun AppNavHost(container: AppContainer) {
 }
 
 /**
- * 底部 Tab：图标与文字常驻。
+ * 悬浮 Dock：一条白色胶囊托住三个 Tab。
  *
- * 早期版本做成「未选中只显示图标、选中才淡入文字」（Crossfade 图标↔文字 + label = null）。
- * 视觉上确实更紧凑，但代价是两个真实问题：未选中项的图标语义只能靠猜；label = null 让
- * M3 指示器的宽度改由自定义内容盒子决定，切页时胶囊宽度会跟着跳变。
- * 现在把 label 交回 NavigationBarItem，选中态只由指示器与颜色表达，文字恒定可见。
+ * 为什么不再用 M3 NavigationBar：它的通栏底色会把页面切成「内容 + 一条杠」，
+ * 而这一版希望导航像浮在纸面上的一件东西 —— 外边距、圆角、细边线，选中项是
+ * 一枚黑色胶囊。视觉上退后一档，但点击面积仍然是整格（48dp 高）。
  */
 @Composable
-private fun RowScope.NavTab(
-    navController: NavHostController,
-    route: String,
+private fun FloatingDock(
+    currentRoute: String?,
+    onBeforeNavigate: () -> Unit,
+    onNavigate: (String) -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .padding(top = 8.dp, bottom = 14.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(62.dp)
+                .shadow(
+                    elevation = 10.dp,
+                    shape = Radii.dock,
+                    clip = false,
+                    ambientColor = Color.Black.copy(alpha = 0.10f),
+                    spotColor = Color.Black.copy(alpha = 0.12f),
+                )
+                .clip(Radii.dock)
+                .background(MaterialTheme.colorScheme.surface)
+                .border(1.dp, StrokeColors.card, Radii.dock)
+                .padding(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            DockItem(
+                modifier = Modifier.weight(1f),
+                label = "首页",
+                icon = Icons.Outlined.Home,
+                selected = currentRoute == Route.HOME,
+                onClick = {
+                    onBeforeNavigate()
+                    onNavigate(Route.HOME)
+                },
+            )
+            DockItem(
+                modifier = Modifier.weight(1f),
+                label = "历史",
+                icon = Icons.Outlined.Schedule,
+                selected = currentRoute == Route.HISTORY,
+                onClick = {
+                    onBeforeNavigate()
+                    onNavigate(Route.HISTORY)
+                },
+            )
+            DockItem(
+                modifier = Modifier.weight(1f),
+                label = "设置",
+                icon = Icons.Outlined.Tune,
+                selected = currentRoute == Route.SETTINGS,
+                onClick = {
+                    onBeforeNavigate()
+                    onNavigate(Route.SETTINGS)
+                },
+            )
+        }
+    }
+}
+
+private val DockItemShape = RoundedCornerShape(11.dp)
+
+@Composable
+private fun DockItem(
     label: String,
     icon: ImageVector,
     selected: Boolean,
-    // 导航前回调：记录「从哪个 Tab 出发」，供新页面决定入场位移的方向
-    onBeforeNavigate: () -> Unit,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val isDark = isSystemInDarkTheme()
-    val selectedColor = if (isDark) Blue300 else Blue600
-    val indicatorColor by animateColorAsState(
-        targetValue = if (selected) {
-            if (isDark) Blue700.copy(alpha = 0.55f) else Blue50
-        } else {
-            Color.Transparent
-        },
-        animationSpec = tween(220),
-        label = "tabIndicator",
+    val background by animateColorAsState(
+        targetValue = if (selected) InkColors.inverseSurface else Color.Transparent,
+        animationSpec = tween(200),
+        label = "dockItemBackground",
     )
-    // 图标与文字共用同一个颜色动画，避免过渡中间帧两者出现色差
     val contentColor by animateColorAsState(
-        targetValue = if (selected) selectedColor else MaterialTheme.colorScheme.onSurfaceVariant,
-        animationSpec = tween(220),
-        label = "tabContent",
+        targetValue = if (selected) InkColors.inverse else TextColors.muted,
+        animationSpec = tween(200),
+        label = "dockItemContent",
     )
-    // v1.8 第二轮：按压下沉 + 选中弹性放大 —— 切换不再「咔哒」一跳，图标大小跟着状态走
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
-        targetValue = if (pressed) 0.86f else 1f,
+        targetValue = if (pressed) 0.96f else 1f,
         animationSpec = tween(110),
-        label = "tabPressScale",
-    )
-    val selectedScale by animateFloatAsState(
-        targetValue = if (selected) 1.15f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
-        label = "tabSelectedScale",
+        label = "dockPressScale",
     )
 
-    NavigationBarItem(
-        selected = selected,
-        onClick = {
-            onBeforeNavigate()
-            navController.navigateToTab(route)
-        },
-        interactionSource = interactionSource,
-        icon = {
-            // contentDescription = null：下面的文字标签已经承担了可访问名称，
-            // 两边都设会让读屏把同一件事念两遍。
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier.graphicsLayer {
-                    scaleX = pressScale * selectedScale
-                    scaleY = pressScale * selectedScale
-                },
-            )
-        },
-        label = {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-            )
-        },
-        colors = NavigationBarItemDefaults.colors(
-            selectedIconColor = contentColor,
-            selectedTextColor = contentColor,
-            indicatorColor = indicatorColor,
-            unselectedIconColor = contentColor,
-            unselectedTextColor = contentColor,
-        ),
-    )
+    Row(
+        modifier = modifier
+            .fillMaxHeight()
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
+            .clip(DockItemShape)
+            .background(background)
+            .selectable(
+                selected = selected,
+                onClick = onClick,
+                role = Role.Tab,
+                interactionSource = interactionSource,
+                indication = null,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier.size(17.dp),
+        )
+        Spacer(Modifier.width(7.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.5.sp),
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = contentColor,
+            maxLines = 1,
+        )
+    }
 }

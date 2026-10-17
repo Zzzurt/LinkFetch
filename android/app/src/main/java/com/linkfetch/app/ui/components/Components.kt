@@ -11,25 +11,32 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material.icons.outlined.DownloadDone
+import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
@@ -66,14 +73,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
+import com.linkfetch.app.ui.theme.InkColors
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.StrokeColors
 import com.linkfetch.app.ui.theme.TabularNums
 import com.linkfetch.app.ui.theme.TextColors
 import com.linkfetch.app.ui.theme.TintedSurfaceColors
-import com.linkfetch.app.ui.theme.platformAccent
 import com.linkfetch.app.ui.theme.onPlatform
+import com.linkfetch.app.ui.theme.platformAccent
 import com.linkfetch.app.util.Platform
 
 // ---------- 平台 / 类型标识 ----------
@@ -166,41 +174,49 @@ fun TypeTag(type: String, modifier: Modifier = Modifier) {
     Text(
         text = label,
         modifier = modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant, Radii.pill)
-            .padding(horizontal = 10.dp, vertical = 3.dp),
-        style = MaterialTheme.typography.labelMedium,
-        // 压在 surfaceVariant 上的 12sp 小字统一走次级文字语义色：深色下会自动比
-        // onSurfaceVariant 亮一档（约 8:1，而 onSurfaceVariant 在该底色上只有约 4.9:1，
-        // 12sp 小字没有余量）。此前这里只能就地判 isSystemInDarkTheme 打补丁。
+            .background(MaterialTheme.colorScheme.surfaceVariant, Radii.chip)
+            .padding(horizontal = 7.dp, vertical = 2.dp),
+        // 类型标签退到 10sp 大字距，像一枚钢印，不与标题抢注意力
+        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp),
         color = TextColors.muted,
     )
 }
 
 /**
- * 无封面 / 封面加载失败时的占位：平台色淡渐变底 + 平台徽标。
+ * 无封面 / 封面加载失败时的占位：浅灰底 + 平台代号。
  *
  * 为什么需要这一档：封面拿不到的原因不止一种（数据里就没这个字段、封面存的是视频地址解不了、
  * 图床防盗链拒绝），而此前的失败态是一块纯中性灰 —— 用户看到的是"这里坏了"，而不是
- * "这条记录属于哪个平台、只是没有封面可显示"。用平台色 + 徽标至少留住了身份信息，
+ * "这条记录属于哪个平台、只是没有封面可显示"。留下平台代号至少留住了身份信息，
  * 也让列表里的空位看起来是**有意为之**而不是渲染失败。
  *
- * 「本来就没有封面」与「封面加载失败」两条路径共用这个组件，避免两处各写一份渐变参数后漂移。
+ * 「本来就没有封面」与「封面加载失败」两条路径共用这个组件，避免两处各写一份参数后漂移。
  */
 @Composable
 fun BoxScope.CoverPlaceholder(platform: Platform?, badgeSize: Int = 26) {
-    val accent = platform?.let { platformAccent(it, isSystemInDarkTheme()) }
-        ?: MaterialTheme.colorScheme.surfaceVariant
+    // 黑白灰体系里占位不再借用平台色：一块浅灰底 + 平台代号，颜色只留给用户取回的图
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    listOf(accent.copy(alpha = 0.28f), accent.copy(alpha = 0.08f)),
-                ),
-            ),
+            .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
-        platform?.let { PlatformBadge(it, size = badgeSize) }
+        platform?.let {
+            Text(
+                text = when (it) {
+                    Platform.XHS -> "XHS"
+                    Platform.DOUYIN -> "DY"
+                    Platform.WEIBO -> "WB"
+                    Platform.X -> "X"
+                },
+                style = MaterialTheme.typography.labelSmall.copy(
+                    letterSpacing = 1.4.sp,
+                    // badgeSize 决定占位里那几字代号的视觉重量：列表 22、首页小格 20。
+                    fontSize = (badgeSize * 0.42f).sp,
+                ),
+                color = TextColors.muted,
+            )
+        }
     }
 }
 
@@ -296,9 +312,12 @@ fun LoadingButton(
     }
     Button(
         onClick = onClick,
-        modifier = modifier,
+        modifier = modifier.heightIn(min = 48.dp),
         enabled = enabled && !loading,
-        shape = MaterialTheme.shapes.extraLarge,
+        // 黑白灰体系里按钮是矩形收角（8dp），不是胶囊 —— 胶囊太「消费级」，
+        // 与「工具」的气质相冲。
+        shape = Radii.field,
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
         colors = colors ?: variantColors,
     ) {
         if (loading) {
@@ -324,18 +343,37 @@ fun LoadingButton(
 fun PageHeader(
     title: String,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
     ) {
-        Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            if (subtitle != null) {
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(4.dp)
+                            .clip(CircleShape)
+                            .background(TextColors.muted),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextColors.muted,
+                    )
+                }
+            }
+        }
         actions()
     }
 }
@@ -366,20 +404,24 @@ fun SectionHeader(
 ) {
     Row(
         modifier = modifier.fillMaxWidth(),
-        // 引线随行居中，落在文字的光学中线上（而不是贴底成一条下划线）
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = title,
             style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.sp,
             color = MaterialTheme.colorScheme.onSurface,
         )
         if (count != null) {
             Spacer(Modifier.width(Spacing.sm))
             Text(
-                text = count.toString(),
-                style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = TabularNums),
+                // 编号格式：两位、等宽、大字距 —— 像印刷品上的页码
+                text = count.toString().padStart(2, '0'),
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFeatureSettings = TabularNums,
+                    letterSpacing = 1.4.sp,
+                ),
                 color = TextColors.muted,
             )
         }
@@ -488,7 +530,7 @@ fun EmptyState(
     modifier: Modifier = Modifier,
     actionText: String? = null,
     onAction: (() -> Unit)? = null,
-    icon: ImageVector = Icons.Outlined.DownloadDone,
+    icon: ImageVector = Icons.Outlined.Image,
 ) {
     Column(
         modifier = modifier
@@ -496,39 +538,216 @@ fun EmptyState(
             .padding(horizontal = Spacing.xl),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // 纯 primaryContainer 打底，不再叠 primaryContainer → primary@35% 的渐变：
-        // 浅色下渐变末端的合成色约 #A9C2F7，与图标色 primary(#2563EB) 的对比只剩约 2.9:1，
-        // 略低于图形对象 3:1 的门槛（40dp 图标居中，右下角恰好落在渐变最深处）。
+        // 空状态插画：三张错位的「空卡片」，右下角一颗实心方块 —— 不用彩色圆底，
+        // 它和整页的黑白灰是一套语言。
         Box(
             modifier = Modifier
-                .size(88.dp)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
+                .width(200.dp)
+                .height(150.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(40.dp),
+            Box(
+                modifier = Modifier
+                    .width(148.dp)
+                    .height(104.dp)
+                    .graphicsLayer { rotationZ = -7f }
+                    .clip(Radii.card)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, StrokeColors.card, Radii.card),
             )
+            Box(
+                modifier = Modifier
+                    .width(148.dp)
+                    .height(104.dp)
+                    .graphicsLayer { rotationZ = 4f }
+                    .clip(Radii.card)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, StrokeColors.card, Radii.card),
+            )
+            Box(
+                modifier = Modifier
+                    .width(156.dp)
+                    .height(110.dp)
+                    .clip(Radii.card)
+                    .background(MaterialTheme.colorScheme.surface)
+                    .border(1.dp, StrokeColors.card, Radii.card),
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = TextColors.muted,
+                    modifier = Modifier.align(Alignment.Center).size(26.dp),
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(13.dp)
+                        .size(7.dp)
+                        .background(MaterialTheme.colorScheme.onSurface),
+                )
+            }
         }
-        Spacer(Modifier.height(Spacing.lg))
+        Spacer(Modifier.height(Spacing.xxl))
         Text(
             text = title,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
         )
         Spacer(Modifier.height(Spacing.sm))
         Text(
             text = message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall.copy(lineHeight = 22.sp),
+            color = TextColors.muted,
             textAlign = TextAlign.Center,
         )
         if (actionText != null && onAction != null) {
-            Spacer(Modifier.height(Spacing.lg))
-            LoadingButton(text = actionText, loading = false, onClick = onAction)
+            Spacer(Modifier.height(Spacing.xl))
+            InkButton(text = actionText, onClick = onAction, trailingArrow = true)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 黑白灰体系的通用零件
+// ---------------------------------------------------------------------------
+
+/** 微标签：9.5sp + 大字距，用于「链接 / LINK」「改动要点 / 05」这类系统注记。 */
+@Composable
+fun MicroLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = TextColors.muted,
+) {
+    Text(
+        text = text,
+        modifier = modifier,
+        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.8.sp),
+        color = color,
+    )
+}
+
+/** 幽灵胶囊：白底 + 1px 描边，用于页头右侧的「选择 / 保存 / 粘贴」这类次级动作。 */
+@Composable
+fun GhostPill(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier = modifier
+            .height(34.dp)
+            .clip(Radii.pill)
+            .background(
+                if (enabled) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+            )
+            .border(
+                1.dp,
+                if (enabled) StrokeColors.card else StrokeColors.card.copy(alpha = 0.6f),
+                Radii.pill,
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (enabled) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                TextColors.muted.copy(alpha = 0.55f)
+            },
+        )
+    }
+}
+
+/** 反相方块：黑色圆角小方块 + check，用于「已保存 / 已选中」标记。 */
+@Composable
+fun SquareCheck(
+    modifier: Modifier = Modifier,
+    size: Dp = 17.dp,
+    checked: Boolean = true,
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(4.dp))
+            .background(
+                if (checked) {
+                    InkColors.inverseSurface
+                } else {
+                    Color.Transparent
+                },
+            )
+            .then(
+                if (checked) {
+                    Modifier
+                } else {
+                    Modifier.border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f), RoundedCornerShape(4.dp))
+                },
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (checked) {
+            Icon(
+                Icons.Filled.Check,
+                contentDescription = null,
+                tint = InkColors.inverse,
+                modifier = Modifier.size(size * 0.62f),
+            )
+        }
+    }
+}
+
+/** 黑色实心主按钮（直角化）：首页「解析」、结果页「保存全部」。 */
+@Composable
+fun InkButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    loading: Boolean = false,
+    trailingArrow: Boolean = false,
+    compact: Boolean = false,
+) {
+    Row(
+        modifier = modifier
+            .height(if (compact) 44.dp else 48.dp)
+            .clip(Radii.field)
+            .background(
+                if (enabled && !loading) {
+                    InkColors.inverseSurface
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                },
+            )
+            .clickable(enabled = enabled && !loading, onClick = onClick)
+            .padding(horizontal = if (compact) 16.dp else 20.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (loading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp,
+                color = InkColors.inverse,
+            )
+            Spacer(Modifier.width(10.dp))
+        }
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelLarge.copy(letterSpacing = 0.5.sp),
+            color = if (enabled && !loading) InkColors.inverse else TextColors.muted,
+        )
+        if (trailingArrow) {
+            Spacer(Modifier.width(10.dp))
+            Icon(
+                Icons.Filled.ArrowForward,
+                contentDescription = null,
+                tint = InkColors.inverse,
+                modifier = Modifier.size(15.dp),
+            )
         }
     }
 }
@@ -574,7 +793,8 @@ fun GroupCard(
         modifier = modifier.fillMaxWidth(),
         shape = Radii.card,
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        // 黑白灰体系不用阴影：层级由 1px 描边与留白建立（投影会在浅灰纸上留下脏边）
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         border = BorderStroke(1.dp, StrokeColors.card),
     ) {
         Column(modifier = Modifier.padding(Spacing.lg), content = content)

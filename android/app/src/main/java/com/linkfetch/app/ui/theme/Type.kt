@@ -8,10 +8,24 @@ import androidx.compose.ui.unit.sp
 /** 数字等宽特性（下载计数、进度百分比跳动时宽度不变） */
 const val TabularNums = "tnum"
 
+/**
+ * 黑白灰体系的字阶。
+ *
+ * 只有四个角色：页标题（34）、区块标题（20/16）、正文（14）、微标签（10 + 大字距）。
+ * 没有 26/22/15 这些中间档 —— 黑白灰界面没有颜色帮忙分层，字号和字距必须一眼可辨。
+ */
 val LinkFetchTypography = Typography(
     displayLarge = TextStyle(
         fontSize = 32.sp,
         lineHeight = 40.sp,
+        fontWeight = FontWeight.Bold,
+        // 中文大标题收紧字距，视觉上更「立」
+        letterSpacing = (-0.5).sp,
+    ),
+    /** 页面标题（历史 / 设置） */
+    headlineLarge = TextStyle(
+        fontSize = 34.sp,
+        lineHeight = 42.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = (-0.5).sp,
     ),
@@ -19,38 +33,25 @@ val LinkFetchTypography = Typography(
         fontSize = 26.sp,
         lineHeight = 34.sp,
         fontWeight = FontWeight.Bold,
+        letterSpacing = (-0.3).sp,
     ),
-    /**
-     * 内容标题（如结果页的作品标题）。
-     *
-     * M3 默认 headlineSmall 是 24sp，这里收到 20sp：一是补上 16sp→22sp 之间缺失的一档
-     * （此前要么 16sp 太小压不住页面，要么直接跳到 22sp 与页标题同级），
-     * 二是让"作品标题"比页标题（TopAppBar / titleLarge 22sp）低一档，两个大标题不打架。
-     */
+    /** 内容标题（结果页的作品标题、空状态标题） */
     headlineSmall = TextStyle(
         fontSize = 20.sp,
-        lineHeight = 27.sp,
-        fontWeight = FontWeight.SemiBold,
+        lineHeight = 28.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = (-0.2).sp,
     ),
     titleLarge = TextStyle(
         fontSize = 22.sp,
         lineHeight = 28.sp,
-        fontWeight = FontWeight.SemiBold,
+        fontWeight = FontWeight.Bold,
     ),
     titleMedium = TextStyle(
         fontSize = 16.sp,
         lineHeight = 24.sp,
         fontWeight = FontWeight.SemiBold,
     ),
-    /**
-     * 列表标题 / 卡片标题 / 页内分区标签。
-     *
-     * 字重从 Medium 提到 SemiBold：14sp Medium 与字号同级的 `bodyMedium`(14sp Regular) 只差
-     * 一个字重，作为"标题"层级不够 —— 深色下尤其明显，卡片标题读起来像正文的第一行。
-     * 提一档后，标题与正文的差异来自**字重**而不是颜色，色觉障碍用户同样能分辨。
-     *
-     * SectionHeader 仍显式声明 SemiBold、不依赖这里的取值，组件规格保持自洽。
-     */
     titleSmall = TextStyle(
         fontSize = 14.sp,
         lineHeight = 20.sp,
@@ -58,11 +59,11 @@ val LinkFetchTypography = Typography(
     ),
     bodyLarge = TextStyle(
         fontSize = 16.sp,
-        lineHeight = 24.sp,
+        lineHeight = 25.sp,
     ),
     bodyMedium = TextStyle(
         fontSize = 14.sp,
-        lineHeight = 21.sp,
+        lineHeight = 22.sp,
     ),
     bodySmall = TextStyle(
         fontSize = 12.sp,
@@ -78,9 +79,11 @@ val LinkFetchTypography = Typography(
         lineHeight = 16.sp,
         fontWeight = FontWeight.Medium,
     ),
+    /** 微标签：分区名、编号、状态码。字距在这里承担「系统感」。 */
     labelSmall = TextStyle(
-        fontSize = 11.sp,
+        fontSize = 10.sp,
         lineHeight = 14.sp,
         fontWeight = FontWeight.Medium,
+        letterSpacing = 1.2.sp,
     ),
 )

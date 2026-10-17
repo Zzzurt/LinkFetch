@@ -2,7 +2,9 @@ package com.linkfetch.app.ui.settings
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -18,11 +20,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cookie
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -33,8 +34,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -47,35 +48,30 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.linkfetch.app.BuildConfig
 import com.linkfetch.app.data.AppContainer
-import com.linkfetch.app.ui.components.ButtonVariant
+import com.linkfetch.app.ui.components.GhostPill
+import com.linkfetch.app.ui.components.InkButton
 import com.linkfetch.app.ui.components.LoadingButton
 import com.linkfetch.app.ui.components.PageHeader
-import com.linkfetch.app.ui.components.PlatformBadge
-import com.linkfetch.app.ui.components.PlatformDot
 import com.linkfetch.app.ui.components.ScreenFadeIn
-import com.linkfetch.app.ui.components.TintedPanel
 import com.linkfetch.app.ui.components.VerticalSpace
+import com.linkfetch.app.ui.theme.MonoError
 import com.linkfetch.app.ui.theme.Radii
-import com.linkfetch.app.ui.theme.Spacing
-import com.linkfetch.app.ui.theme.SuccessGreen
+import com.linkfetch.app.ui.theme.StrokeColors
 import com.linkfetch.app.ui.theme.TextColors
-import com.linkfetch.app.ui.theme.WarningAmber
 import com.linkfetch.app.util.Platform
 
-/**
- * 吸底保存条的实测高度：上下各 12dp 内边距 + 状态行 + 8dp + 按钮 40dp ≈ 90dp，取 96dp 留余量。
- * 内容底部留白与 Snackbar 抬升共用这一个值，避免两处各写一个魔数、改一处漏一处。
- */
-private val SaveBarHeight = 96.dp
+/** SettingsRepository 的出厂地址；只有改过它才算「用户配置过」 */
+private const val DEFAULT_BASE_URL = "http://10.0.2.2:8000"
 
 @Composable
 fun SettingsScreen(container: AppContainer) {
@@ -85,6 +81,7 @@ fun SettingsScreen(container: AppContainer) {
         },
     )
     val snackbarHostState = remember { SnackbarHostState() }
+    var serverExpanded by remember { mutableStateOf(false) }
 
     // 保存 / 连接测试反馈统一走 Snackbar
     LaunchedEffect(viewModel.message) {
@@ -94,275 +91,344 @@ fun SettingsScreen(container: AppContainer) {
         }
     }
 
-    // 整页包 ScreenFadeIn：进入时淡入，去掉页面硬切感（Snackbar 浮层由内部 Column 上方的 Box 承载）
     ScreenFadeIn(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.screen, vertical = Spacing.md),
+                .padding(horizontal = 20.dp)
+                .padding(top = 16.dp),
         ) {
-            PageHeader(title = "设置")
-            VerticalSpace(8)
+            // 保存动作上移到页头：设置是长页面，原来吸底那条 96dp 的横条占掉整屏高度，
+            // 而「未保存」这件事只需要一个会变亮的胶囊就能说清。
+            PageHeader(
+                title = "设置",
+                actions = {
+                    GhostPill(
+                        text = if (viewModel.saving) "保存中…" else "保存",
+                        onClick = viewModel::save,
+                        enabled = (viewModel.dirty || viewModel.saving) && !viewModel.saving,
+                    )
+                },
+            )
 
-            // 「使用提示」：原首页新手引导条迁移到这里，作为首个分区常驻（不再是一次性可关闭横幅）。
-            // 首屏因此只剩「输入 + 最近记录」两个动作，回到工具该有的样子。
-            SettingsSection(
-                title = "使用提示",
-                icon = Icons.Filled.Info,
+            VerticalSpace(18)
+
+            // 一段常驻的使用提示：复制链接回来就能用，这是最省事的路径
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(Radii.card)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = "复制平台分享链接或整段文案 → 打开 App 自动识别（或粘贴到首页输入框）→ 一键解析 → 在结果页保存到相册。",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(Radii.field)
+                        .background(MaterialTheme.colorScheme.surface),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Filled.ContentPaste,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "复制链接后回到 App",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = "自动读取剪贴板，也可以手动粘贴",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextColors.muted,
+                    )
+                }
             }
 
-            // 直连是唯一推荐用法；服务器模式收进默认关闭的开关后面，避免占用主视觉
-            SettingsSection(
-                title = "解析方式",
-                // 图标由行内的圆块提供，分区标题不再重复放一个小图标
-            ) {
-                val serverMode = viewModel.parseMode == "server"
+            // ---------- 解析方式 ----------
+            SettingsSectionLabel("解析方式")
+            SettingsCard {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // 行图标圆块：统一设置行的视觉密度，比「标题行小图标」更成组
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Filled.SwapHoriz,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
-                    Spacer(Modifier.width(Spacing.md))
+                    IconCell(Icons.Filled.SwapHoriz)
+                    Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = if (serverMode) "自建服务器解析" else "App 直连解析（推荐）",
+                            text = "App 直连解析",
                             style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
                         )
+                        Spacer(Modifier.height(3.dp))
                         Text(
-                            text = if (serverMode) {
-                                "请求经自建服务转发，需要在下方配置服务器"
-                            } else {
-                                "无需服务器，安装即用"
-                            },
+                            text = "免登录、免配置，打开即用",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = TextColors.muted,
                         )
                     }
                     Switch(
-                        checked = serverMode,
-                        onCheckedChange = { enabled ->
-                            viewModel.onParseModeChange(if (enabled) "server" else "direct")
+                        checked = viewModel.parseMode != "server",
+                        onCheckedChange = { direct ->
+                            viewModel.onParseModeChange(if (direct) "direct" else "server")
+                            if (!direct) serverExpanded = true
                         },
+                        colors = monoSwitchColors(),
                     )
                 }
-                Text(
-                    text = "自建服务器适合平台直连失效时使用；开启后需配置地址并保存。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
 
-            AnimatedVisibility(visible = viewModel.parseMode == "server") {
-                SettingsSection(
-                    title = "自建服务器",
-                    icon = Icons.Filled.Dns,
+                GroupDivider()
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { serverExpanded = !serverExpanded }
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    OutlinedTextField(
-                        value = viewModel.baseUrl,
-                        onValueChange = viewModel::onBaseUrlChange,
-                        modifier = Modifier.fillMaxWidth(),
-                        // 与首页输入框同一套「白底无框」视觉：输入区是淡层面板，
-                        // 白块浮在淡层上即可，不需要描边再定义一次边界
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedContainerColor = MaterialTheme.colorScheme.surface,
-                            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                            focusedBorderColor = Color.Transparent,
-                            unfocusedBorderColor = Color.Transparent,
-                            disabledBorderColor = Color.Transparent,
-                        ),
-                        label = { Text("后端地址") },
-                        placeholder = { Text("http://10.0.2.2:8000") },
-                        singleLine = true,
-                    )
-                    val cleartext = viewModel.isCleartext
+                    IconCell(Icons.Filled.Dns)
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "自建服务器",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = "直连失效时作为备用通道",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextColors.muted,
+                        )
+                    }
                     Text(
-                        text = if (cleartext) {
-                            "该地址为明文 http：Token 与 Cookie 将以明文发送，仅建议用于局域网 / 本机；公网地址会被直接拒绝。"
-                        } else {
-                            "自建解析服务的地址。局域网 http 需在 res/xml/network_security_config.xml 中放行。"
+                        text = when {
+                            viewModel.baseUrl.isBlank() -> "未配置"
+                            viewModel.baseUrl.trim() == DEFAULT_BASE_URL -> "默认"
+                            else -> "已配置"
                         },
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (cleartext) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
+                        color = TextColors.muted,
                     )
-                    VerticalSpace(8)
-                    SecretField(
-                        value = viewModel.apiToken,
-                        onValueChange = viewModel::onApiTokenChange,
-                        label = "API Token（可选）",
+                    Spacer(Modifier.width(4.dp))
+                    Icon(
+                        imageVector = if (serverExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (serverExpanded) "收起服务器配置" else "展开服务器配置",
+                        tint = TextColors.muted,
+                        modifier = Modifier.size(17.dp),
                     )
-                    VerticalSpace(8)
-                    Row {
+                }
+
+                AnimatedVisibility(visible = serverExpanded) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp)) {
+                        MonoField(
+                            value = viewModel.baseUrl,
+                            onValueChange = viewModel::onBaseUrlChange,
+                            label = "后端地址",
+                            placeholder = "http://10.0.2.2:8000",
+                        )
+                        VerticalSpace(8)
+                        MonoSecretField(
+                            value = viewModel.apiToken,
+                            onValueChange = viewModel::onApiTokenChange,
+                            label = "API Token（可选）",
+                        )
+                        VerticalSpace(8)
+                        Text(
+                            text = if (viewModel.isCleartext) {
+                                "该地址为明文 http：Token 与 Cookie 将以明文发送，仅建议用于局域网 / 本机；公网地址会被直接拒绝。"
+                            } else {
+                                "自建解析服务的地址。局域网 http 需在 res/xml/network_security_config.xml 中放行。"
+                            },
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.5.sp),
+                            color = if (viewModel.isCleartext) MonoError else TextColors.muted,
+                        )
+                        VerticalSpace(10)
                         LoadingButton(
                             text = if (viewModel.testing) "测试中…" else "测试连接",
                             loading = viewModel.testing,
                             onClick = viewModel::testConnection,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        VerticalSpace(10)
+                    }
+                }
+            }
+
+            // ---------- 平台凭证 ----------
+            SettingsSectionLabel(
+                title = "平台凭证",
+                note = "仅存本机，不参与备份",
+            )
+            SettingsCard {
+                CredentialRow(
+                    platform = Platform.XHS,
+                    code = "XHS",
+                    label = "小红书 Cookie",
+                    value = viewModel.xhsCookie,
+                    onValueChange = viewModel::onXhsCookieChange,
+                )
+                GroupDivider()
+                CredentialRow(
+                    platform = Platform.DOUYIN,
+                    code = "DY",
+                    label = "抖音 Cookie",
+                    value = viewModel.douyinCookie,
+                    onValueChange = viewModel::onDouyinCookieChange,
+                )
+                GroupDivider()
+                CredentialRow(
+                    platform = Platform.WEIBO,
+                    code = "WB",
+                    label = "微博 Cookie",
+                    value = viewModel.weiboCookie,
+                    onValueChange = viewModel::onWeiboCookieChange,
+                )
+                if (viewModel.xhsCookie.isNotBlank() ||
+                    viewModel.douyinCookie.isNotBlank() ||
+                    viewModel.weiboCookie.isNotBlank()
+                ) {
+                    GroupDivider()
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = viewModel::clearCredentials)
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "清空全部凭证",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MonoError,
                         )
                     }
                 }
             }
 
-            SettingsSection(
-                title = "平台 Cookie（可选）",
-                icon = Icons.Filled.Cookie,
-            ) {
-                Text(
-                    text = "部分受限内容需要登录态，填入对应平台 Cookie 可提升解析成功率。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = "Cookie 等同账号登录态，保存在应用私有目录且不参与系统备份。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                VerticalSpace(8)
-                // 三个平台各占一行「状态行」，点击展开才出现输入框。
-                // 此前是三个永远长一样的空输入框 —— 用户无法从界面上判断自己到底填过没有，
-                // 而这恰恰决定了"解析失败该不该怪自己没配 Cookie"。
-                // 状态由字段是否为空直接判定，不新增任何存储或判断逻辑。
-                // 只列这三个平台：X 走 syndication 公开接口，不需要登录态。
-                CredentialRow(
-                    platform = Platform.XHS,
-                    label = "小红书 Cookie",
-                    value = viewModel.xhsCookie,
-                    onValueChange = viewModel::onXhsCookieChange,
-                )
-                CredentialRow(
-                    platform = Platform.DOUYIN,
-                    label = "抖音 Cookie",
-                    value = viewModel.douyinCookie,
-                    onValueChange = viewModel::onDouyinCookieChange,
-                )
-                CredentialRow(
-                    platform = Platform.WEIBO,
-                    label = "微博 Cookie",
-                    value = viewModel.weiboCookie,
-                    onValueChange = viewModel::onWeiboCookieChange,
-                )
-                VerticalSpace(4)
-                TextButton(onClick = viewModel::clearCredentials) {
-                    Text("清空全部凭证", color = MaterialTheme.colorScheme.error)
-                }
-            }
+            // 下载质量一栏已取消：直连与保存都按原图原片走，没有可选的档位，
+            // 留一个永远「即将上线」的控件只是在暗示一个不存在的承诺。
 
-            VerticalSpace(24)
+            VerticalSpace(26)
             Text(
-                text = "链取 v${BuildConfig.VERSION_NAME}",
+                text = "链取 ${BuildConfig.VERSION_NAME} · 版本 ${BuildConfig.VERSION_CODE}",
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = TextColors.muted,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
-            VerticalSpace(8)
+            VerticalSpace(10)
             Text(
-                text = "Live 图以 Motion Photo 格式保存：Google 相册、小米、OPPO 等图库可直接播放动态效果，部分第三方相册仅显示静态图。",
+                text = "Live 图以 Motion Photo 保存，部分图库仅显示静态图。",
                 modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.5.sp),
+                color = TextColors.muted,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
-            // 给吸底保存条留出高度，避免最后这段说明被它盖住
-            Spacer(Modifier.height(SaveBarHeight))
+            VerticalSpace(18)
         }
-
-        // 保存条吸底常驻：Cookie 区与原先的保存按钮之间隔着整个分区，
-        // 填完凭证必须一路滚到底才能保存，忘点就静默丢失。
-        SettingsSaveBar(
-            dirty = viewModel.dirty,
-            saving = viewModel.saving,
-            onSave = viewModel::save,
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
 
         SnackbarHost(
             hostState = snackbarHostState,
-            // 抬到保存条上方，避免与保存状态互相遮挡
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = SaveBarHeight),
+                .padding(bottom = 84.dp),
         )
     }
 }
 
-/** 吸底保存条：常驻显示"是否有未保存的修改" + 保存按钮 */
 @Composable
-private fun SettingsSaveBar(
-    dirty: Boolean,
-    saving: Boolean,
-    onSave: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp,
-    ) {
-        Column(modifier = Modifier.padding(horizontal = Spacing.screen, vertical = Spacing.md)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(if (dirty) WarningAmber else SuccessGreen),
-                )
-                Spacer(Modifier.width(Spacing.sm))
-                Text(
-                    text = if (dirty) "有未保存的修改" else "设置已保存",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Spacer(Modifier.height(Spacing.sm))
-            LoadingButton(
-                text = if (saving) "保存中…" else "保存设置",
-                loading = saving,
-                onClick = onSave,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = dirty,
-                // v1.8：主按钮从实心品牌蓝降为 Tonal，弱化常驻按钮的压迫感；
-                // 品牌蓝在首屏与结果页保存动作上仍保留，设置页的保存是低频操作
-                variant = ButtonVariant.Tonal,
+private fun SettingsSectionLabel(title: String, note: String? = null) {
+    VerticalSpace(22)
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 1.8.sp),
+            color = TextColors.muted,
+        )
+        note?.let {
+            Spacer(Modifier.width(9.dp))
+            Text(
+                text = it,
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.4.sp),
+                color = TextColors.muted.copy(alpha = 0.62f),
             )
         }
     }
+    Spacer(Modifier.height(8.dp))
 }
+
+@Composable
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(Radii.card)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, StrokeColors.card, Radii.card),
+        content = content,
+    )
+}
+
+@Composable
+private fun GroupDivider() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp)
+            .height(1.dp)
+            .background(MaterialTheme.colorScheme.outlineVariant),
+    )
+}
+
+/** 行首的小方块图标位：32dp、淡灰底，让三组设置行有统一的起点 */
+@Composable
+private fun IconCell(icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(Radii.field)
+            .background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+@Composable
+private fun monoSwitchColors() = SwitchDefaults.colors(
+    checkedThumbColor = MaterialTheme.colorScheme.surface,
+    checkedTrackColor = MaterialTheme.colorScheme.onSurface,
+    checkedBorderColor = Color.Transparent,
+    uncheckedThumbColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+    uncheckedTrackColor = MaterialTheme.colorScheme.surfaceVariant,
+    uncheckedBorderColor = StrokeColors.card,
+)
 
 /**
  * 单个平台的凭证行。
  *
- * 收起态只有一行：徽标 + 平台名 + 状态点 + 是否已配置 + 展开箭头；展开后才渲染输入框。
+ * 收起态只有一行：平台代号 + 平台名 + 状态 + 展开箭头；展开后才渲染输入框。
  * 这样用户扫一眼就知道"哪些平台配过"，而不是逐个点开空框去确认。
- *
- * 状态判定直接看 value 是否为空 —— 凭证本来就存在 SettingsRepository 里，不新增状态源。
  */
 @Composable
 private fun CredentialRow(
     platform: Platform,
+    code: String,
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
@@ -373,48 +439,95 @@ private fun CredentialRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(Radii.field)
                 .clickable { expanded = !expanded }
-                // 纵向 12dp 让整行触控高度超过 48dp（Material 建议的最小可点尺寸）
-                .padding(vertical = Spacing.md, horizontal = Spacing.sm),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PlatformBadge(platform, size = 26)
-            Spacer(Modifier.width(Spacing.md))
+            // 平台身份用三字母代号，而不是彩色圆标 —— 这一版把颜色全部让给内容
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(Radii.field)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = code,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 8.5.sp,
+                        letterSpacing = 0.6.sp,
+                    ),
+                    color = TextColors.muted,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
             Text(
                 text = platform.label,
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
             )
-            // v1.8：状态点从语义色（绿/灰）改为平台彩点 —— 配置状态由右侧文字承载，
-            // 颜色只承担「这是哪个平台」的身份语义，色觉障碍用户不被颜色误导。
-            PlatformDot(platform)
-            Spacer(Modifier.width(Spacing.xs))
             Text(
                 text = if (configured) "已配置" else "未配置",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextColors.muted,
             )
+            Spacer(Modifier.width(4.dp))
             Icon(
                 imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                 contentDescription = if (expanded) "收起$label" else "展开$label",
                 tint = TextColors.muted,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(17.dp),
             )
         }
         AnimatedVisibility(visible = expanded) {
-            Column {
-                Spacer(Modifier.height(Spacing.sm))
-                SecretField(value = value, onValueChange = onValueChange, label = label)
-                Spacer(Modifier.height(Spacing.xs))
+            Column(modifier = Modifier.padding(horizontal = 14.dp)) {
+                MonoSecretField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    label = label,
+                )
+                VerticalSpace(10)
             }
         }
     }
 }
 
+/** 普通输入框：浅灰底、无描边，与白卡形成「可输入 / 只读」的层次 */
+@Composable
+private fun MonoField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    placeholder: String = "",
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        shape = Radii.field,
+        colors = monoFieldColors(),
+        textStyle = MaterialTheme.typography.bodyMedium,
+        label = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp),
+            )
+        },
+        placeholder = {
+            Text(
+                text = placeholder,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextColors.muted,
+            )
+        },
+        singleLine = true,
+    )
+}
+
 /** 敏感字段：默认掩码显示，可切换明文。用于 API Token 与平台 Cookie，避免设置页被肩窥。 */
 @Composable
-private fun SecretField(
+private fun MonoSecretField(
     value: String,
     onValueChange: (String) -> Unit,
     label: String,
@@ -424,15 +537,15 @@ private fun SecretField(
         value = value,
         onValueChange = onValueChange,
         modifier = Modifier.fillMaxWidth(),
-        // 与后端地址一致：「白底无框」，与上游淡层分组统一
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surface,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-            focusedBorderColor = Color.Transparent,
-            unfocusedBorderColor = Color.Transparent,
-            disabledBorderColor = Color.Transparent,
-        ),
-        label = { Text(label) },
+        shape = Radii.field,
+        colors = monoFieldColors(),
+        textStyle = MaterialTheme.typography.bodyMedium,
+        label = {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp),
+            )
+        },
         singleLine = true,
         visualTransformation = if (visible) {
             VisualTransformation.None
@@ -444,7 +557,8 @@ private fun SecretField(
                 Icon(
                     imageVector = if (visible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
                     contentDescription = if (visible) "隐藏$label" else "显示$label",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = TextColors.muted,
+                    modifier = Modifier.size(17.dp),
                 )
             }
         },
@@ -452,47 +566,13 @@ private fun SecretField(
 }
 
 @Composable
-private fun SettingsSection(
-    title: String,
-    icon: ImageVector? = null,
-    trailing: @Composable (() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    // 分区之间 24dp（本项目的区块间距，与首页/结果页一致）、标题到卡片 4dp、卡片内 16dp：
-    // 让"换了个话题"在间距上就看得出来。此前分区之间只有 16dp，与卡片内部 16dp 同值，
-    // 层级读不出来。
-    VerticalSpace(24)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = Spacing.xs),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        icon?.let {
-            Icon(
-                it,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(Spacing.sm))
-        }
-        Text(
-            // 分区标题靠字号与字重拉开层级，不靠颜色。
-            // 此前用的是 primary 色 + 与正文同级的 titleSmall：深色下 primary 是 #93C5FD，
-            // 大面积浅蓝文字铺在页面上会让整页"到处都在强调"，反而没有重点；
-            // 而颜色本来就不该当层级的主要手段 —— 色觉障碍用户会直接失去这条线索。
-            text = title,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
-        trailing?.invoke()
-    }
-    // v1.8：分区容器从「描边卡片」改为「淡层面板」 —— 设置页是低频长页面，
-    // 一屏多张描边卡会让整页像"一堆盒子"；无描边的淡层分组更接近系统设置的安静感。
-    // 内部元素（输入框、Switch 行）用 surface 白块承托，层次由「白浮在淡层上」表达。
-    TintedPanel {
-        Column(modifier = Modifier.padding(Spacing.lg), content = content)
-    }
-}
+private fun monoFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+    focusedBorderColor = MaterialTheme.colorScheme.onSurface,
+    unfocusedBorderColor = Color.Transparent,
+    disabledBorderColor = Color.Transparent,
+    focusedLabelColor = MaterialTheme.colorScheme.onSurface,
+    unfocusedLabelColor = TextColors.muted,
+    cursorColor = MaterialTheme.colorScheme.onSurface,
+)
