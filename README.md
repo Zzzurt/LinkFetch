@@ -7,21 +7,6 @@
 ![android](https://img.shields.io/badge/Android-8.0%2B-0A0A0A?style=flat-square)
 ![mode](https://img.shields.io/badge/direct-no%20server-0A0A0A?style=flat-square)
 
-## 界面
-
-<table>
-<tr>
-<td align="center"><img src="https://github.com/Zzzurt/LinkFetch/releases/download/v1.8.3/home.png" width="200" alt="首页"><br><sub>首页</sub></td>
-<td align="center"><img src="https://github.com/Zzzurt/LinkFetch/releases/download/v1.8.3/history.png" width="200" alt="历史"><br><sub>历史</sub></td>
-<td align="center"><img src="https://github.com/Zzzurt/LinkFetch/releases/download/v1.8.3/result.png" width="200" alt="结果"><br><sub>解析结果</sub></td>
-</tr>
-<tr>
-<td align="center"><img src="https://github.com/Zzzurt/LinkFetch/releases/download/v1.8.3/settings.png" width="200" alt="设置"><br><sub>设置</sub></td>
-<td align="center"><img src="https://github.com/Zzzurt/LinkFetch/releases/download/v1.8.3/dark.png" width="200" alt="深色"><br><sub>深色模式</sub></td>
-<td align="center"><img src="https://github.com/Zzzurt/LinkFetch/releases/download/v1.8.3/empty.png" width="200" alt="空状态"><br><sub>空状态</sub></td>
-</tr>
-</table>
-
 ## 功能
 
 - **四平台**：某书 / 某音 / 某博 / 某推
@@ -60,30 +45,6 @@ set API_TOKEN=<自定义口令>
 ```
 
 然后填写「后端地址」与同一个「API Token」。局域网 `http://` 需先加入 `android/app/src/main/res/xml/network_security_config.xml`。
-
-### 从源码构建
-
-```bash
-cd android
-./gradlew.bat :app:assembleDebug
-adb install app/build/outputs/apk/debug/app-debug.apk
-```
-
-未配置 `.keystore/debug.keystore` 时会回退到 SDK 默认调试密钥，无需自备签名即可编译。
-
-### 测试
-
-```bash
-# Android：单元测试 + lint
-cd android
-./gradlew.bat :app:testDebugUnitTest :app:lintDebug
-
-# 后端
-cd backend
-.venv\Scripts\python -m pytest
-```
-
-`backend/tests/fixtures/` 下的响应 fixture 由前后端测试共同读取，用于保证接口字段一致（见 `backend/tests/test_contract.py` 与 `ParseContractTest.kt`）。
 
 ## 已知限制
 
