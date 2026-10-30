@@ -20,8 +20,8 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -59,11 +59,10 @@ fun FullScreenImagePreview(
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
     ) {
         val safeIndex = initialIndex.coerceIn(0, urls.size - 1)
-        val pagerState = rememberPagerState(initialPage = safeIndex)
+        val pagerState = rememberPagerState(initialPage = safeIndex, pageCount = { urls.size })
         val scope = rememberCoroutineScope()
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
             HorizontalPager(
-                pageCount = urls.size,
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
             ) { page ->
@@ -95,7 +94,7 @@ fun FullScreenImagePreview(
                         .padding(start = 4.dp)
                         .size(48.dp),
                 ) {
-                    Icon(Icons.Filled.KeyboardArrowLeft, contentDescription = "上一张", tint = Color.White.copy(alpha = 0.8f))
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "上一张", tint = Color.White.copy(alpha = 0.8f))
                 }
             }
             if (urls.size > 1 && pagerState.currentPage < urls.size - 1) {
@@ -106,7 +105,7 @@ fun FullScreenImagePreview(
                         .padding(end = 4.dp)
                         .size(48.dp),
                 ) {
-                    Icon(Icons.Filled.KeyboardArrowRight, contentDescription = "下一张", tint = Color.White.copy(alpha = 0.8f))
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "下一张", tint = Color.White.copy(alpha = 0.8f))
                 }
             }
         }

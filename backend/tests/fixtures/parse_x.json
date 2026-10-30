@@ -1,0 +1,19 @@
+{
+  "platform": "x",
+  "title": "A post with media",
+  "author": "someone",
+  "type": "mixed",
+  "medias": [
+    {
+      "kind": "image",
+      "url": "https://pbs.twimg.com/media/ABC?format=jpg&name=orig",
+      "quality": "original"
+    },
+    {
+      "kind": "video",
+      "url": "https://video.twimg.com/ext_tw_video/123/pu/vid/1280x720/video.mp4",
+      "cover": "https://pbs.twimg.com/media/ABC?format=jpg&name=small",
+      "quality": "hd"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 """FastAPI 入口：/api/parse 解析接口 + /api/health 健康检查。"""
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 import uuid
@@ -8,7 +9,7 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -28,7 +29,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     app.state.http = httpx.AsyncClient(
         timeout=httpx.Timeout(20.0, connect=10.0),
-        follow_redirects=True,
+        # 重定向由 net.fetch 手动跟随并逐跳校验目标，客户端本身不自动跟随
+        follow_redirects=False,
         headers={"User-Agent": "LinkFetch/1.0"},
         limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
     )
@@ -70,13 +72,14 @@ def _authorize(provided_token: Optional[str]) -> None:
         if settings.allow_unauthenticated:
             logger.warning("未配置 API_TOKEN 且已放开鉴权，服务处于无认证状态")
             return
-        raise HTTPException(
-            status_code=503,
-            detail="服务未配置鉴权：请设置 API_TOKEN 环境变量（本机调试可设 ALLOW_UNAUTHENTICATED=1）",
+        raise ParseError(
+            "service_unconfigured",
+            "服务未配置鉴权：请设置 API_TOKEN 环境变量（本机调试可设 ALLOW_UNAUTHENTICATED=1）",
+            http_status=503,
         )
     # 常量时间比较，避免按字节短路带来的时序侧信道
     if not hmac.compare_digest(provided_token or "", expected):
-        raise HTTPException(status_code=401, detail="无效的 API Token")
+        raise ParseError("unauthorized", "无效的 API Token", http_status=401)
 
 
 @app.exception_handler(ParseError)
@@ -112,9 +115,13 @@ async def parse(
     try:
         client: httpx.AsyncClient = request.app.state.http
         parser = parser_class(client)
-        return await parser.parse(body.url, cookie=cookie)
+        # 单个作品最多 9 次串行上游请求，必须给整次解析设置总时限
+        return await asyncio.wait_for(parser.parse(body.url, cookie=cookie), timeout=90)
     except ParseError:
         raise
+    except asyncio.TimeoutError as exc:
+        logger.warning("[%s] 解析总超时: %s", trace_id, exc)
+        raise ParseError("parse_failed", f"解析超时，请稍后重试（追踪号 {trace_id}）") from exc
     except httpx.TimeoutException as exc:
         logger.warning("[%s] 请求平台超时: %s", trace_id, exc)
         raise ParseError("parse_failed", f"请求平台超时，请稍后重试（追踪号 {trace_id}）") from exc

@@ -54,8 +54,8 @@ class WeiboParser(BaseParser):
         status_id = self._extract_status_id(url)
         if status_id is None:
             # 短链需要展开：检查整条重定向链中的 URL
-            resp = await self.client.get(url, headers=headers, follow_redirects=True)
-            for candidate in [str(resp.url)] + [str(h.url) for h in resp.history]:
+            resp = await self.fetch(url, headers=headers)
+            for candidate in [resp.url, *resp.history]:
                 status_id = self._extract_status_id(candidate)
                 if status_id:
                     break
@@ -63,7 +63,7 @@ class WeiboParser(BaseParser):
             raise ParseError(PARSE_FAILED, "无法从微博链接中提取微博 ID", http_status=400)
 
         api = f"https://m.weibo.cn/statuses/show?id={status_id}"
-        resp = await self.client.get(api, headers=headers)
+        resp = await self.fetch(api, headers=headers)
         if resp.status_code in (403, 429):
             raise ParseError(RATE_LIMITED, "微博触发了风控，请稍后重试（可尝试在设置中配置 Cookie）")
         try:

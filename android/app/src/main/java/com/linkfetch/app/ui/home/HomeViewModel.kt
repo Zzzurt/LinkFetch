@@ -6,15 +6,18 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.linkfetch.app.data.ParseResultStore
-import com.linkfetch.app.data.api.ApiClient
 import com.linkfetch.app.data.api.ApiException
 import com.linkfetch.app.data.db.HistoryDao
 import com.linkfetch.app.data.db.HistoryEntity
+import com.linkfetch.app.data.db.HistoryRepository
+import com.linkfetch.app.data.download.DownloadQueue
 import com.linkfetch.app.data.model.ParseResponseDto
-import com.linkfetch.app.data.parser.LocalParseClient
 import com.linkfetch.app.data.parser.LocalParseException
+import com.linkfetch.app.data.parser.ParseService
+import com.linkfetch.app.util.NotificationPermissionGate
 import com.linkfetch.app.util.Platform
 import com.linkfetch.app.util.UrlExtractor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -23,11 +26,13 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
 class HomeViewModel(
-    private val apiClient: ApiClient,
-    private val localParseClient: LocalParseClient,
-    private val parseModeProvider: () -> String,
+    private val parseService: ParseService,
     private val historyDao: HistoryDao,
+    private val historyRepository: HistoryRepository,
     private val json: Json,
+    private val downloadQueue: DownloadQueue? = null,
+    private val autoSaveProvider: () -> Boolean = { false },
+    private val notificationPermission: NotificationPermissionGate? = null,
 ) : ViewModel() {
 
     var input by mutableStateOf("")
@@ -49,6 +54,10 @@ class HomeViewModel(
     var clipboardUrl by mutableStateOf<String?>(null)
         private set
     var result by mutableStateOf<ParseResponseDto?>(null)
+        private set
+
+    /** 批量解析进度（已处理数 / 总数）；单条解析时为 null。 */
+    var batchProgress by mutableStateOf<Pair<Int, Int>?>(null)
         private set
 
     /**
@@ -119,32 +128,54 @@ class HomeViewModel(
         clipboardUrl = null
     }
 
+    /** 来自系统分享 / 深链的文本：直接填入并解析，用户从其他 App 过来时不需要再点一次。 */
+    fun onSharedText(text: String) {
+        val url = UrlExtractor.extractFirstPlatformUrl(text) ?: text.trim()
+        if (url.isBlank()) return
+        input = url
+        clearError()
+        handledClipboardUrl = url
+        clipboardUrl = null
+        parse()
+    }
+
     fun parse() {
         val raw = input.trim()
         if (raw.isEmpty()) {
             fail("请先粘贴或输入平台链接")
             return
         }
-        // 支持整段粘贴分享文案：先尝试从中提取平台链接
-        val url = UrlExtractor.extractFirstPlatformUrl(raw) ?: raw
-        if (Platform.fromUrl(url) == null) {
+        // 支持整段粘贴分享文案，也支持一次粘贴多条链接
+        val urls = UrlExtractor.extractAllPlatformUrls(raw).ifEmpty {
+            listOf(raw).filter { Platform.fromUrl(it) != null }
+        }
+        if (urls.isEmpty()) {
             fail("未识别到小红书、抖音、微博或 X 的链接，请检查后重试")
             return
         }
-        if (url != raw) input = url
+        // 输入框回填成规范化后的链接：单条时与旧行为一致，多条时让用户看清接下来会解析哪些
+        input = urls.joinToString("\n")
         if (parsing) return
+        if (urls.size > 1) parseBatch(urls) else parseSingle(urls.first())
+    }
+
+    private fun parseSingle(url: String) {
         viewModelScope.launch {
             parsing = true
             clearError()
+            ParseResultStore.notice = null
             try {
-                val response = if (parseModeProvider() == "server") {
-                    apiClient.parse(url)
-                } else {
-                    localParseClient.parse(url)
-                }
+                val outcome = parseService.parse(url)
+                val response = outcome.response
+                val historyId = store(url, response)
                 ParseResultStore.originalUrl = url
                 ParseResultStore.result = response
-                saveHistory(url, response)
+                ParseResultStore.historyId = historyId
+                ParseResultStore.notice = if (outcome.viaServerFallback) {
+                    "直连失败，已改用自建服务器解析"
+                } else {
+                    null
+                }
                 result = response
             } catch (e: LocalParseException) {
                 // code 一并带出：UI 层据此给「下一步建议」，比从文案里猜关键词可靠得多
@@ -159,6 +190,84 @@ class HomeViewModel(
         }
     }
 
+    /**
+     * 多条链接依次解析：串行而不是并发，避免同一平台的风控在瞬间收到一串请求。
+     * 成功后照常入库、自动保存；界面打开第一条的结果，其余可在历史里查看。
+     */
+    private fun parseBatch(urls: List<String>) {
+        viewModelScope.launch {
+            parsing = true
+            clearError()
+            ParseResultStore.notice = null
+            var success = 0
+            var failed = 0
+            var fallbackUsed = false
+            var first: Triple<String, ParseResponseDto, Long>? = null
+            var lastError: Throwable? = null
+            try {
+                urls.forEachIndexed { index, url ->
+                    batchProgress = (index + 1) to urls.size
+                    try {
+                        val outcome = parseService.parse(url)
+                        val historyId = store(url, outcome.response)
+                        success++
+                        if (outcome.viaServerFallback) fallbackUsed = true
+                        if (first == null) first = Triple(url, outcome.response, historyId)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        failed++
+                        lastError = e
+                    }
+                }
+            } finally {
+                batchProgress = null
+                parsing = false
+            }
+            val head = first
+            if (head != null) {
+                ParseResultStore.originalUrl = head.first
+                ParseResultStore.result = head.second
+                ParseResultStore.historyId = head.third
+                ParseResultStore.notice = buildString {
+                    append(
+                        if (failed == 0) {
+                            "本批共取回 $success 条，其余可在历史中查看"
+                        } else {
+                            "已取回 $success 条，$failed 条失败"
+                        },
+                    )
+                    if (fallbackUsed) append("；部分内容经服务器备用通道解析")
+                }
+                result = head.second
+                return@launch
+            }
+            when (val error = lastError) {
+                is LocalParseException -> fail(error.message, error.code, error.rawBody)
+                is ApiException -> fail(error.message, error.code)
+                else -> fail("解析失败：${error?.message ?: "网络错误"}")
+            }
+        }
+    }
+
+    /** 入库并在需要时自动排队保存，返回历史记录 id。 */
+    private suspend fun store(url: String, response: ParseResponseDto): Long {
+        val historyId = historyRepository.save(url, response)
+        if (autoSaveProvider()) {
+            notificationPermission?.ensure()
+            // 权限不足等失败由任务状态呈现，不阻塞解析本身
+            runCatching {
+                downloadQueue?.enqueue(
+                    historyId = historyId,
+                    response = response,
+                    indices = response.medias.indices.toList(),
+                    preferLive = true,
+                )
+            }
+        }
+        return historyId
+    }
+
     fun consumeResult() {
         result = null
     }
@@ -167,35 +276,14 @@ class HomeViewModel(
     fun open(entity: HistoryEntity): Boolean {
         val response = runCatching {
             json.decodeFromString(ParseResponseDto.serializer(), entity.mediaJson)
-        }.getOrNull() ?: return false
+        }.getOrNull() ?: run {
+            fail("这条记录的数据已损坏，请重新解析原链接")
+            return false
+        }
         ParseResultStore.originalUrl = entity.originalUrl
         ParseResultStore.result = response
+        ParseResultStore.historyId = entity.id
         return true
-    }
-
-    private suspend fun saveHistory(url: String, response: ParseResponseDto) {
-        // 封面选取必须避开「把视频地址当图片用」：
-        //   1. 优先取第一张**图片**的 cover，没有 cover 就退到它自己的 url（图片 url 本身就是图）；
-        //   2. 没有图片时，退到任意媒体的 cover（视频封面通常是 jpg/webp，能当缩略图）；
-        //   3. 都没有才返回 null —— 此时列表走「平台色渐变底 + 徽标」占位，而不是一块空白。
-        //
-        // 此前是 `medias.firstOrNull()?.let { it.cover ?: it.url }`：medias 的第一项通常是**视频**，
-        // 而微博视频的 cover 取自 pageInfo.page_pic（可能不存在）、X 的几个分支压根不设 cover，
-        // 于是一旦 cover 为 null 就回退成**视频地址本身** —— Coil 解不了 mp4，缩略图就是空白。
-        val cover = response.medias.firstOrNull { !it.isVideo }?.let { it.cover ?: it.url }
-            ?: response.medias.firstNotNullOfOrNull { it.cover }
-        historyDao.insert(
-            HistoryEntity(
-                platform = response.platform,
-                title = response.title,
-                author = response.author,
-                type = response.type,
-                coverUrl = cover,
-                originalUrl = url,
-                mediaJson = json.encodeToString(ParseResponseDto.serializer(), response),
-                createdAt = System.currentTimeMillis(),
-            ),
-        )
     }
 
     private companion object {

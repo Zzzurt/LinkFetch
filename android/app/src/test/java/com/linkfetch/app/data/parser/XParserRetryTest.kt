@@ -67,6 +67,18 @@ class XParserRetryTest {
     }
 
     @Test
+    fun reportsExpiredCredentialInsteadOfGenericRateLimit() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(401))
+
+        try {
+            parser().parse("https://x.com/i/status/3")
+            assertTrue("应当抛出 credential_expired", false)
+        } catch (e: LocalParseException) {
+            assertEquals("credential_expired", e.code)
+        }
+    }
+
+    @Test
     fun attachesRawBodyWhenNoMediaAfterBothAttempts() = runBlocking {
         server.enqueue(MockResponse().setBody("""{"text":"没有媒体 A","foo":1}"""))
         server.enqueue(MockResponse().setBody("""{"text":"没有媒体 B","bar":2}"""))

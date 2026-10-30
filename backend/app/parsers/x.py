@@ -24,6 +24,7 @@ from ..models import (
     ParseResponse,
     Platform,
 )
+from ..net import fetch
 from .base import BaseParser
 
 _SYNDICATION_URL = "https://cdn.syndication.twimg.com/tweet-result"
@@ -50,33 +51,33 @@ class XParser(BaseParser):
                 raise ParseError(PARSE_FAILED, "无法从 X 链接中提取推文 ID")
             # 短链（t.co 等）：沿重定向链查找推文 ID
             try:
-                resp = await self.client.get(url)
+                resp = await self.fetch(url)
             except httpx.HTTPError as exc:
-                raise ParseError(PARSE_FAILED, f"X 短链展开失败：{exc}") from exc
-            for candidate in [resp, *resp.history]:
-                tweet_id = _extract_id(str(candidate.url))
+                raise ParseError(PARSE_FAILED, "X 短链展开失败，请稍后重试") from exc
+            for candidate in [resp.url, *resp.history]:
+                tweet_id = _extract_id(candidate)
                 if tweet_id:
                     break
         if tweet_id is None:
             raise ParseError(PARSE_FAILED, "无法从 X 链接中提取推文 ID")
 
-        last_body: Optional[str] = None
         # 第一遍普通 UA；若媒体为空（长视频常见），第二遍用 Googlebot UA 重试
         for attempt in range(2):
             headers = {"User-Agent": _GOOGLEBOT_UA} if attempt == 1 else None
-            try:
-                resp = await self.client.get(
+            syndication_url = str(
+                httpx.URL(
                     _SYNDICATION_URL,
                     params={"id": tweet_id, "lang": "zh", "token": "7"},
-                    headers=headers,
                 )
+            )
+            try:
+                resp = await self.fetch(syndication_url, headers=headers)
             except httpx.HTTPError as exc:
-                raise ParseError(PARSE_FAILED, f"X 接口请求失败：{exc}") from exc
+                raise ParseError(PARSE_FAILED, "X 接口请求失败，请稍后重试") from exc
             if resp.status_code == 404:
                 raise ParseError(PARSE_FAILED, "推文不存在或已删除")
             if resp.status_code in (403, 429):
                 raise ParseError(RATE_LIMITED, "X 触发了风控，请稍后重试")
-            last_body = resp.text
             try:
                 root = resp.json()
             except ValueError as exc:
@@ -86,7 +87,7 @@ class XParser(BaseParser):
                 message = str(error).lower()
                 if "no status" in message or "invalid" in message:
                     raise ParseError(PARSE_FAILED, "推文不存在或已删除")
-                raise ParseError(PARSE_FAILED, f"X 解析失败：{error}")
+                raise ParseError(PARSE_FAILED, "X 解析失败，请稍后重试")
             if _is_tombstone(root):
                 break
             try:
@@ -174,7 +175,7 @@ async def _collect_card_media(candidate: dict, client: httpx.AsyncClient, medias
 
 async def _resolve_vmap(client: httpx.AsyncClient, url: str) -> Optional[str]:
     try:
-        resp = await client.get(url)
+        resp = await fetch(client, url)
         if resp.status_code != 200:
             return None
     except httpx.HTTPError:
@@ -296,7 +297,7 @@ async def _try_fallback(client: httpx.AsyncClient, tweet_id: str) -> Optional[Pa
         (_build_fx_response, f"https://api.fxtwitter.com/status/{tweet_id}"),
     ):
         try:
-            resp = await client.get(url)
+            resp = await fetch(client, url)
             if resp.status_code != 200:
                 continue
             root = resp.json()

@@ -4,6 +4,7 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
 }
@@ -35,16 +36,28 @@ val linkfetchBuildDir: String = (project.findProperty("linkfetch.buildDir") as S
     }
 buildDir = file(linkfetchBuildDir)
 
+// 更新日志要能离线阅读：构建时把仓库根目录的 CHANGELOG.md 同步进 assets，
+// 避免在 App 里再维护一份同样的文本。assets 合并任务显式依赖这个拷贝任务。
+val syncChangelog = tasks.register<Copy>("syncChangelog") {
+    from(rootProject.file("../CHANGELOG.md"))
+    into(layout.buildDirectory.dir("generated/changelog"))
+}
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(syncChangelog)
+}
+tasks.named("preBuild").configure { dependsOn(syncChangelog) }
+
 android {
     namespace = "com.linkfetch.app"
-    compileSdk = 33
+    compileSdk = 35
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = "com.linkfetch.app"
         minSdk = 26
-        targetSdk = 33
-        versionCode = 33
-        versionName = "1.8.3"
+        targetSdk = 35
+        versionCode = 34
+        versionName = "1.9.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -121,25 +134,27 @@ android {
         buildConfig = true
     }
 
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.4.8"
-    }
-
-    packagingOptions {
+    packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+
+    // 服务端 pytest 与 App 单元测试共用同一批响应 fixture（契约测试），避免各写一份 JSON 后悄悄漂移
+    sourceSets.getByName("test").resources.srcDir(rootProject.file("../backend/tests/fixtures"))
+    // 设置页的「更新日志」读取这份由 syncChangelog 生成的 asset
+    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/changelog"))
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2023.05.01")
+    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
-    implementation("androidx.core:core-ktx:1.10.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.6.1")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.1")
-    implementation("androidx.activity:activity-compose:1.7.2")
+    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
+    implementation("androidx.activity:activity-compose:1.9.3")
 
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -147,28 +162,31 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    implementation("androidx.navigation:navigation-compose:2.5.3")
+    implementation("androidx.navigation:navigation-compose:2.8.5")
 
-    implementation("com.squareup.okhttp3:okhttp:4.11.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 
-    implementation("androidx.room:room-runtime:2.5.1")
-    implementation("androidx.room:room-ktx:2.5.1")
-    ksp("androidx.room:room-compiler:2.5.1")
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
 
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // 下载队列：Activity 退到后台甚至进程被回收后仍要继续保存
+    implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     // Exif 解析：平台自带的 android.media.ExifInterface 读不出 WebP / HEIF 的方向信息，
     // 而 Live 图封面在合成 Motion Photo 前需要按 EXIF 校正方向。
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 
-    implementation("androidx.media3:media3-exoplayer:1.0.2")
-    implementation("androidx.media3:media3-ui:1.0.2")
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
 
-    implementation("io.coil-kt:coil-compose:2.3.0")
+    implementation("io.coil-kt:coil-compose:2.7.0")
 
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.1")
-    testImplementation("com.squareup.okhttp3:mockwebserver:4.11.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }

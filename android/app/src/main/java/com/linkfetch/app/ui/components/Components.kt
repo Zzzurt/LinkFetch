@@ -12,7 +12,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -33,7 +32,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.outlined.Image
@@ -43,7 +42,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -74,6 +73,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import com.linkfetch.app.ui.theme.InkColors
+import com.linkfetch.app.ui.theme.LocalDarkTheme
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.StrokeColors
@@ -85,102 +85,6 @@ import com.linkfetch.app.ui.theme.platformAccent
 import com.linkfetch.app.util.Platform
 
 // ---------- 平台 / 类型标识 ----------
-
-/**
- * 平台彩点：比 [PlatformBadge] 更轻的身份标识，只承担「这是哪个平台」的颜色语义。
- *
- * 用于首页输入区、结果页信息头、历史页记录行 —— 这些地方放一个带文字的徽标太重，
- * 一行用一个小圆点就能传达平台身份（颜色只表达身份，不表达状态；
- * 状态语义仍由文字与其它形状承担，色觉障碍用户不会被彩点误读）。
- */
-@Composable
-fun PlatformDot(
-    platform: Platform,
-    modifier: Modifier = Modifier,
-    size: Dp = 8.dp,
-) {
-    val accent = platformAccent(platform, isSystemInDarkTheme())
-    // 亮色平台（微博橙 / 抖音青）压在浅底上对比弱，加一圈同色描边把圆点「读」出来
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(accent)
-            .border(1.dp, accent.copy(alpha = 0.45f), CircleShape),
-    )
-}
-
-@Composable
-fun PlatformBadge(
-    platform: Platform,
-    modifier: Modifier = Modifier,
-    size: Int = 28,
-    /**
-     * 是否处于「已识别」状态。
-     *
-     * 默认 true 保持原有平台色；传 false 时降为统一中性灰（浅 surfaceVariant / 深 DarkSurfaceHigh）。
-     * 用于首页输入区的徽标行：平时一行同色、安静不花哨，只有检测到当前输入属于哪个平台时
-     * 才把对应徽标点亮为平台色 —— 颜色重新承担「即时反馈」的含义。
-     */
-    active: Boolean = true,
-) {
-    val accent = platformAccent(platform, isSystemInDarkTheme())
-    val mutedBg = MaterialTheme.colorScheme.surfaceVariant
-    // v1.8 第三轮：徽标准备色过渡 —— active 变化时背景/前景颜色做 200ms 平滑切换，
-    // 「识别到平台」的反馈不再是硬切
-    val animatedAccent by animateColorAsState(
-        targetValue = if (active) accent else mutedBg,
-        animationSpec = tween(220),
-        label = "badgeAccent",
-    )
-    val foreground by animateColorAsState(
-        targetValue = if (active) onPlatform(accent) else MaterialTheme.colorScheme.onSurfaceVariant,
-        animationSpec = tween(220),
-        label = "badgeForeground",
-    )
-    Box(
-        modifier = modifier
-            // 用 sizeIn 而不是 size：字号随系统放大时容器跟着长，单个汉字不会被圆标裁掉。
-            // 极端字号下会退化成胶囊形，比切掉笔画好。
-            .sizeIn(minWidth = size.dp, minHeight = size.dp)
-            .background(
-                // active/非 active 都用「提亮→主色」的渐变；非 active 时主色为中性灰，
-                // lerp 提亮后视觉接近纯 mutedBg，观感与过渡都自然
-                Brush.linearGradient(listOf(lerp(animatedAccent, Color.White, 0.14f), animatedAccent)),
-                CircleShape,
-            )
-            .padding(horizontal = 3.dp, vertical = 2.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = platform.label.take(1),
-            // 前景色随底色亮度自适应：橙/青亮底用深字、红/黑暗底用白字（AA 对比）
-            color = foreground,
-            fontWeight = FontWeight.Bold,
-            fontSize = (size * 0.45f).sp,
-            maxLines = 1,
-        )
-    }
-}
-
-@Composable
-fun TypeTag(type: String, modifier: Modifier = Modifier) {
-    val label = when (type) {
-        "video" -> "视频"
-        "image" -> "图片"
-        "mixed" -> "视频 + 图片"
-        else -> type
-    }
-    Text(
-        text = label,
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant, Radii.chip)
-            .padding(horizontal = 7.dp, vertical = 2.dp),
-        // 类型标签退到 10sp 大字距，像一枚钢印，不与标题抢注意力
-        style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp),
-        color = TextColors.muted,
-    )
-}
 
 /**
  * 无封面 / 封面加载失败时的占位：浅灰底 + 平台代号。
@@ -426,7 +330,7 @@ fun SectionHeader(
             )
         }
         Spacer(Modifier.width(Spacing.md))
-        Divider(
+        HorizontalDivider(
             modifier = Modifier.weight(1f),
             color = MaterialTheme.colorScheme.outlineVariant,
         )
@@ -453,7 +357,7 @@ fun ShimmerBox(modifier: Modifier = Modifier, shape: Shape = Radii.small) {
         animationSpec = infiniteRepeatable(tween(durationMillis = 1300, easing = LinearEasing)),
         label = "shimmerOffset",
     )
-    val highlightAlpha = if (isSystemInDarkTheme()) 0.10f else 0.60f
+    val highlightAlpha = if (LocalDarkTheme.current) 0.10f else 0.60f
     Box(modifier = modifier.clip(shape).background(MaterialTheme.colorScheme.surfaceVariant)) {
         Box(
             modifier = Modifier
@@ -743,7 +647,7 @@ fun InkButton(
         if (trailingArrow) {
             Spacer(Modifier.width(10.dp))
             Icon(
-                Icons.Filled.ArrowForward,
+                Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = null,
                 tint = InkColors.inverse,
                 modifier = Modifier.size(15.dp),
@@ -753,27 +657,6 @@ fun InkButton(
 }
 
 // ---------- 通用分组卡片 ----------
-
-/**
- * 「淡层」分组面板（v1.8 UI 重设计引入）。
- *
- * 与 [GroupCard] 的分工：GroupCard 是有描边有阴影的「浮起卡片」，用于独立内容块；
- * TintedPanel 是**无描边**的低一档容器，用作「工作台 / 设置分组」这类页面级的区域底。
- * 面板内用白色(surface)元素（输入框、Switch 行）承载交互，层次由「白块浮在淡层上」表达。
- */
-@Composable
-fun TintedPanel(
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(Radii.card)
-            .background(TintedSurfaceColors.container),
-        content = content,
-    )
-}
 
 /**
  * 通用分组卡片。

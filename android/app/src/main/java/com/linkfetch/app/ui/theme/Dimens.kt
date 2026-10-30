@@ -71,5 +71,7 @@ val LinkFetchShapes = Shapes(
     small = Radii.small,
     medium = Radii.field,
     large = Radii.card,
-    extraLarge = Radii.pill,
+    // M3 的 AlertDialog 默认取 extraLarge；指回 card（12dp）。
+    // 之前指到 pill（50%）会让弹窗变成胶囊/椭圆，内容被弧线裁切。
+    extraLarge = Radii.card,
 )

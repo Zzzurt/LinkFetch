@@ -1,0 +1,19 @@
+{
+  "platform": "xhs",
+  "title": "周末去海边",
+  "author": "小海",
+  "type": "mixed",
+  "medias": [
+    {
+      "kind": "video",
+      "url": "https://sns-video-bd.xhscdn.com/stream/1/110/259/0/1.mp4",
+      "cover": "https://sns-img-bd.xhscdn.com/cover.jpg",
+      "quality": "hd"
+    },
+    {
+      "kind": "image",
+      "url": "https://sns-img-bd.xhscdn.com/notes/1.jpg",
+      "quality": "original"
+    }
+  ]
+}

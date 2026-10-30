@@ -1,7 +1,11 @@
 package com.linkfetch.app.ui.home
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -60,6 +64,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -85,6 +90,7 @@ import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.StrokeColors
 import com.linkfetch.app.ui.theme.TextColors
 import com.linkfetch.app.util.Platform
+import com.linkfetch.app.util.UrlExtractor
 import com.linkfetch.app.util.formatHistoryTime
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -95,21 +101,29 @@ fun HomeScreen(
     onOpenResult: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit,
+    sharedText: String? = null,
+    onSharedTextConsumed: () -> Unit = {},
 ) {
+    val context = LocalContext.current
+    // ViewModel 比 Activity 活得久，闭包里只持有 Application Context
+    val appContext = context.applicationContext
     val viewModel: HomeViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
                 HomeViewModel(
-                    apiClient = container.apiClient,
-                    localParseClient = container.localParseClient,
-                    parseModeProvider = { container.settingsRepository.settings.value.parseMode },
+                    parseService = container.parseService,
                     historyDao = container.historyDao,
+                    historyRepository = container.historyRepository,
                     json = container.json,
+                    downloadQueue = container.downloadQueue,
+                    autoSaveProvider = {
+                        container.settingsRepository.settings.value.autoSave && canAutoSave(appContext)
+                    },
+                    notificationPermission = container.notificationPermission,
                 )
             }
         },
     )
-    val context = LocalContext.current
     val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
     val recent by viewModel.recentItems.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -123,6 +137,13 @@ fun HomeScreen(
             ?.coerceToText(context)
             ?.toString()
         viewModel.onClipboardText(text)
+    }
+
+    LaunchedEffect(sharedText) {
+        if (sharedText != null) {
+            viewModel.onSharedText(sharedText)
+            onSharedTextConsumed()
+        }
     }
 
     LaunchedEffect(viewModel.result) {
@@ -140,6 +161,10 @@ fun HomeScreen(
 
     val detectedPlatform = remember(viewModel.input) {
         Platform.detectFromText(viewModel.input)
+    }
+    // 批量粘贴时链接数量比「哪个平台」更值得提示
+    val detectedCount = remember(viewModel.input) {
+        UrlExtractor.extractAllPlatformUrls(viewModel.input).size
     }
 
     ScreenFadeIn(modifier = Modifier.fillMaxSize()) {
@@ -213,7 +238,7 @@ fun HomeScreen(
                         .background(MaterialTheme.colorScheme.onSurface),
                 )
                 Spacer(Modifier.width(9.dp))
-                MicroLabel("原图 · 原片 · 无水印", color = MaterialTheme.colorScheme.onSurface)
+                MicroLabel("无水印 · 不压缩", color = MaterialTheme.colorScheme.onSurface)
             }
             VerticalSpace(14)
             Text(
@@ -224,13 +249,6 @@ fun HomeScreen(
                 ),
                 fontWeight = FontWeight.Bold,
             )
-            VerticalSpace(12)
-            Text(
-                text = "复制平台分享链接，粘贴后自动识别来源。",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextColors.muted,
-            )
-
             VerticalSpace(24)
 
             // 剪贴板提示：只在检测到链接时出现，保持一行，不抢输入卡的视觉
@@ -382,15 +400,13 @@ fun HomeScreen(
                     Spacer(Modifier.width(7.dp))
                     if (detectedPlatform != null) {
                         Text(
-                            text = "已识别 ${detectedPlatform.label}",
+                            text = if (detectedCount > 1) {
+                                "已识别 $detectedCount 条链接"
+                            } else {
+                                "已识别 ${detectedPlatform.label}"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            text = "· 原图直取",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextColors.muted,
                         )
                     } else {
                         Text(
@@ -458,7 +474,12 @@ fun HomeScreen(
                     }
                     Spacer(Modifier.weight(1f))
                     InkButton(
-                        text = if (viewModel.parsing) "解析中…" else "解析",
+                        text = when {
+                            viewModel.batchProgress != null ->
+                                "解析 ${viewModel.batchProgress?.first}/${viewModel.batchProgress?.second}"
+                            viewModel.parsing -> "解析中…"
+                            else -> "解析"
+                        },
                         onClick = viewModel::parse,
                         enabled = viewModel.input.isNotBlank(),
                         loading = viewModel.parsing,
@@ -693,3 +714,11 @@ private fun RecentTile(
         )
     }
 }
+
+/** API 28 及以下写相册需要存储权限；没有权限时不自动排队，留待用户在结果页手动授权后保存。 */
+private fun canAutoSave(context: Context): Boolean =
+    Build.VERSION.SDK_INT > Build.VERSION_CODES.P ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+        ) == PackageManager.PERMISSION_GRANTED

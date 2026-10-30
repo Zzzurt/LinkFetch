@@ -1,5 +1,4 @@
 <resources>
-    <color name="window_background">#F8FAFC</color>
-    <color name="ic_launcher_background">#2563EB</color>
+    <!-- 与 Compose 的 Paper 保持一致：启动窗口背景不能比首帧更亮/更蓝，否则会闪一下 -->
+    <color name="window_background">#F3F3F4</color>
 </resources>
-

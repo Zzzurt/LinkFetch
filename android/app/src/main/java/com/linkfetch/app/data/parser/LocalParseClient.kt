@@ -3,6 +3,8 @@ package com.linkfetch.app.data.parser
 import com.linkfetch.app.data.model.ParseResponseDto
 import com.linkfetch.app.util.Platform
 import java.io.IOException
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import okhttp3.OkHttpClient
 
 /**
@@ -21,16 +23,20 @@ class LocalParseClient(
         val platform = Platform.fromUrl(url)
             ?: throw LocalParseException("unsupported_link", "仅支持小红书、抖音、微博、X 平台的链接")
         return try {
-            val cookie = cookieProvider(platform)
-            when (platform) {
-                Platform.XHS -> XhsParser(client = client).parse(url, cookie)
-                Platform.DOUYIN -> DouyinParser(
-                    webViewPageFetcher = douyinWebViewFallback?.let { fetch -> { pageUrl -> fetch(pageUrl, cookie) } },
-                    client = client,
-                ).parse(url, cookie)
-                Platform.WEIBO -> WeiboParser(client = client).parse(url, cookie)
-                Platform.X -> XParser(client = client).parse(url, cookie)
+            withTimeout(PARSE_TIMEOUT_MS) {
+                val cookie = cookieProvider(platform)
+                when (platform) {
+                    Platform.XHS -> XhsParser(client = client).parse(url, cookie)
+                    Platform.DOUYIN -> DouyinParser(
+                        webViewPageFetcher = douyinWebViewFallback?.let { fetch -> { pageUrl -> fetch(pageUrl, cookie) } },
+                        client = client,
+                    ).parse(url, cookie)
+                    Platform.WEIBO -> WeiboParser(client = client).parse(url, cookie)
+                    Platform.X -> XParser(client = client).parse(url, cookie)
+                }
             }
+        } catch (e: TimeoutCancellationException) {
+            throw LocalParseException("parse_timeout", "解析超时，请稍后重试")
         } catch (e: LocalParseException) {
             throw e
         } catch (e: IOException) {
@@ -38,6 +44,9 @@ class LocalParseClient(
         }
     }
 }
+
+/** 抖音最坏情况下要串行请求 9 次上游，90 秒后仍无结果就按超时收口。 */
+private const val PARSE_TIMEOUT_MS = 90_000L
 
 /**
  * 平台感知的网络错误提示。

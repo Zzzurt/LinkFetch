@@ -1,0 +1,18 @@
+{
+  "platform": "weibo",
+  "title": "今天的云",
+  "author": "天气记录员",
+  "type": "image",
+  "medias": [
+    {
+      "kind": "image",
+      "url": "https://wx1.sinaimg.cn/large/001.jpg",
+      "quality": "original"
+    },
+    {
+      "kind": "image",
+      "url": "https://wx1.sinaimg.cn/large/002.jpg",
+      "quality": "original"
+    }
+  ]
+}

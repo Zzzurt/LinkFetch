@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import re
 from typing import List, Optional
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 from ..models import (
     PARSE_FAILED,
@@ -54,8 +54,8 @@ class XiaohongshuParser(BaseParser):
         if cookie:
             headers["Cookie"] = cookie
 
-        resp = await self.client.get(url, headers=headers, follow_redirects=True)
-        final_url = str(resp.url)
+        resp = await self.fetch(url, headers=headers)
+        final_url = resp.url
         match = _NOTE_ID_RE.search(final_url)
         if not match:
             raise ParseError(PARSE_FAILED, "无法从小红书链接中提取笔记 ID", http_status=400)
@@ -64,8 +64,10 @@ class XiaohongshuParser(BaseParser):
         xsec_token = xsec.group(1) if xsec else ""
 
         explore_url = f"https://www.xiaohongshu.com/explore/{note_id}"
-        params = {"xsec_token": xsec_token, "xsec_source": "pc_feed"} if xsec_token else None
-        page = await self.client.get(explore_url, params=params, headers=headers, follow_redirects=True)
+        if xsec_token:
+            params = urlencode({"xsec_token": xsec_token, "xsec_source": "pc_feed"})
+            explore_url = f"{explore_url}?{params}"
+        page = await self.fetch(explore_url, headers=headers)
         if page.status_code in (403, 429, 461):
             raise ParseError(RATE_LIMITED, "小红书触发了风控，请稍后重试（可尝试在设置中配置 Cookie）")
 

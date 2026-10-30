@@ -87,6 +87,45 @@ class UrlExtractorTest {
     }
 
     @Test
+    fun extractAllPlatformUrlsKeepsOrderAndDeduplicates() {
+        val text = """
+            第一 https://v.douyin.com/aaa/
+            第二 https://xhslink.com/a/bbb
+            重复 https://v.douyin.com/aaa/
+            其他 https://example.com/ccc
+        """.trimIndent()
+
+        assertEquals(
+            listOf(
+                "https://v.douyin.com/aaa/",
+                "https://xhslink.com/a/bbb",
+            ),
+            UrlExtractor.extractAllPlatformUrls(text),
+        )
+    }
+
+    @Test
+    fun extractAllPlatformUrlsReturnsEmptyWhenNoneSupported() {
+        assertEquals(
+            emptyList<String>(),
+            UrlExtractor.extractAllPlatformUrls("https://www.bilibili.com/video/BV1xx"),
+        )
+    }
+
+    @Test
+    fun extractAllHandlesMultipleLinesWithPunctuation() {
+        val text = "https://m.weibo.cn/status/123。\nhttps://x.com/i/status/456，"
+
+        assertEquals(
+            listOf(
+                "https://m.weibo.cn/status/123",
+                "https://x.com/i/status/456",
+            ),
+            UrlExtractor.extractAllPlatformUrls(text),
+        )
+    }
+
+    @Test
     fun platformFromUrlCases() {
         assertEquals(Platform.XHS, Platform.fromUrl("https://www.xiaohongshu.com/explore/64abc"))
         assertEquals(Platform.XHS, Platform.fromUrl("https://xhslink.com/a/AbC12"))

@@ -1,8 +1,16 @@
 package com.linkfetch.app.ui.navigation
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -10,11 +18,13 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,6 +33,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Tune
@@ -30,8 +41,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -54,8 +67,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.linkfetch.app.data.AppContainer
+import com.linkfetch.app.ui.components.LocalAnimatedVisibilityScope
 import com.linkfetch.app.ui.components.LocalScreenEnterFromLeft
+import com.linkfetch.app.ui.components.LocalSharedTransitionScope
 import com.linkfetch.app.ui.history.HistoryScreen
+import com.linkfetch.app.ui.history.HistorySelectionBarState
 import com.linkfetch.app.ui.home.HomeScreen
 import com.linkfetch.app.ui.result.ResultScreen
 import com.linkfetch.app.ui.settings.SettingsScreen
@@ -97,11 +113,23 @@ private fun NavHostController.navigateToTab(route: String) {
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun AppNavHost(container: AppContainer) {
+fun AppNavHost(
+    container: AppContainer,
+    sharedText: String? = null,
+    onSharedTextConsumed: () -> Unit = {},
+) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+
+    // 分享 / 深链进来时先回到首页，由首页负责解析；否则分享内容可能在当前页永远不被消费。
+    LaunchedEffect(sharedText) {
+        if (sharedText != null && currentRoute != null && currentRoute != Route.HOME) {
+            navController.navigateToTab(Route.HOME)
+        }
+    }
 
     // 上一次停留的底部 Tab 序号：只用来给页面入场位移定方向。
     // 必须在 DockItem 的 onClick 里先行记录，而不是靠 currentRoute 变化后的副作用 ——
@@ -109,19 +137,48 @@ fun AppNavHost(container: AppContainer) {
     var lastTabIndex by remember { mutableStateOf(0) }
     val recordCurrentTab: () -> Unit = { lastTabIndex = tabIndexOf(currentRoute) }
     val enterFromLeft = tabIndexOf(currentRoute) < lastTabIndex
-    val showDock = currentRoute == Route.HOME ||
+
+    // 历史多选时「全选 / 删除」操作条接管 Dock 的槽位。
+    // 两者共用同一份高度与外边距，切换期间 Scaffold 的底部内边距不变，列表不会被重排。
+    var historySelecting by remember { mutableStateOf(false) }
+    val historySelectionBar = remember { HistorySelectionBarState() }
+    val showSelectionBar = currentRoute == Route.HISTORY && historySelecting
+    val showDock = (currentRoute == Route.HOME ||
         currentRoute == Route.HISTORY ||
-        currentRoute == Route.SETTINGS
+        currentRoute == Route.SETTINGS) && !showSelectionBar
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            if (showDock) {
-                FloatingDock(
-                    currentRoute = currentRoute,
-                    onBeforeNavigate = recordCurrentTab,
-                    onNavigate = { route -> navController.navigateToTab(route) },
-                )
+            // 两个底栏共用槽位：同一时间最多只有一个完全可见；切换时交叉淡入淡出。
+            // 位移只有槽位高度的 1/12，像同一块面板换了一组内容，而不是第二块栏挤进来。
+            val barEnter = slideInVertically(
+                initialOffsetY = { it / 12 },
+                animationSpec = tween(220, easing = FastOutSlowInEasing),
+            ) + fadeIn(animationSpec = tween(220))
+            val barExit = slideOutVertically(
+                targetOffsetY = { it / 12 },
+                animationSpec = tween(220, easing = FastOutSlowInEasing),
+            ) + fadeOut(animationSpec = tween(220))
+            Box(modifier = Modifier.fillMaxWidth()) {
+                AnimatedVisibility(
+                    visible = showDock,
+                    enter = barEnter,
+                    exit = barExit,
+                ) {
+                    FloatingDock(
+                        currentRoute = currentRoute,
+                        onBeforeNavigate = recordCurrentTab,
+                        onNavigate = { route -> navController.navigateToTab(route) },
+                    )
+                }
+                AnimatedVisibility(
+                    visible = showSelectionBar,
+                    enter = barEnter,
+                    exit = barExit,
+                ) {
+                    HistorySelectionBar(state = historySelectionBar)
+                }
             }
         },
     ) { innerPadding ->
@@ -138,41 +195,72 @@ fun AppNavHost(container: AppContainer) {
             // 用 CompositionLocal 下发而不是逐页传参 —— 四个页面的 ScreenFadeIn 调用点
             // 就不必各自感知导航顺序这件事。
             CompositionLocalProvider(LocalScreenEnterFromLeft provides enterFromLeft) {
-                NavHost(
-                    navController = navController,
-                    startDestination = Route.HOME,
+                SharedTransitionLayout(
                     modifier = Modifier
                         .widthIn(max = PageMaxWidth)
                         .fillMaxHeight(),
                 ) {
-                    composable(Route.HOME) {
-                        HomeScreen(
-                            container = container,
-                            onOpenResult = { navController.navigate(Route.RESULT) },
-                            onOpenHistory = { navController.navigateToTab(Route.HISTORY) },
-                            // 与底部 Tab 走同一套导航（navigateToTab）
-                            onOpenSettings = { navController.navigateToTab(Route.SETTINGS) },
-                        )
-                    }
-                    composable(Route.RESULT) {
-                        ResultScreen(
-                            container = container,
-                            onBack = { navController.popBackStack() },
-                        )
-                    }
-                    composable(Route.HISTORY) {
-                        HistoryScreen(
-                            container = container,
-                            onOpenResult = { navController.navigate(Route.RESULT) },
-                            onGoHome = { navController.navigateToTab(Route.HOME) },
-                        )
-                    }
-                    composable(Route.SETTINGS) {
-                        SettingsScreen(container = container)
+                    CompositionLocalProvider(LocalSharedTransitionScope provides this) {
+                        NavHost(
+                            navController = navController,
+                            startDestination = Route.HOME,
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            composable(Route.HOME) {
+                                WithAnimatedScope {
+                                    HomeScreen(
+                                        container = container,
+                                        onOpenResult = { navController.navigate(Route.RESULT) },
+                                        onOpenHistory = { navController.navigateToTab(Route.HISTORY) },
+                                        // 与底部 Tab 走同一套导航（navigateToTab）
+                                        onOpenSettings = { navController.navigateToTab(Route.SETTINGS) },
+                                        sharedText = sharedText,
+                                        onSharedTextConsumed = onSharedTextConsumed,
+                                    )
+                                }
+                            }
+                            composable(Route.RESULT) {
+                                WithAnimatedScope {
+                                    ResultScreen(
+                                        container = container,
+                                        onBack = { navController.popBackStack() },
+                                    )
+                                }
+                            }
+                            composable(Route.HISTORY) {
+                                WithAnimatedScope {
+                                    HistoryScreen(
+                                        container = container,
+                                        onOpenResult = { navController.navigate(Route.RESULT) },
+                                        onGoHome = { navController.navigateToTab(Route.HOME) },
+                                        onSelectionModeChange = { historySelecting = it },
+                                        selectionBarState = historySelectionBar,
+                                    )
+                                }
+                            }
+                            composable(Route.SETTINGS) {
+                                WithAnimatedScope {
+                                    SettingsScreen(container = container)
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * 把 Navigation 给每个目的地提供的 [androidx.compose.animation.AnimatedContentScope]
+ * 下发给页面，供共享元素使用。接收者 `this` 就是该目的地的 AnimatedVisibilityScope。
+ */
+@Composable
+private fun androidx.compose.animation.AnimatedContentScope.WithAnimatedScope(
+    content: @Composable () -> Unit,
+) {
+    CompositionLocalProvider(LocalAnimatedVisibilityScope provides this) {
+        content()
     }
 }
 
@@ -189,9 +277,52 @@ private fun FloatingDock(
     onBeforeNavigate: () -> Unit,
     onNavigate: (String) -> Unit,
 ) {
+    BottomSlot {
+        DockItem(
+            modifier = Modifier.weight(1f),
+            label = "首页",
+            icon = Icons.Outlined.Home,
+            selected = currentRoute == Route.HOME,
+            onClick = {
+                onBeforeNavigate()
+                onNavigate(Route.HOME)
+            },
+        )
+        DockItem(
+            modifier = Modifier.weight(1f),
+            label = "历史",
+            icon = Icons.Outlined.Schedule,
+            selected = currentRoute == Route.HISTORY,
+            onClick = {
+                onBeforeNavigate()
+                onNavigate(Route.HISTORY)
+            },
+        )
+        DockItem(
+            modifier = Modifier.weight(1f),
+            label = "设置",
+            icon = Icons.Outlined.Tune,
+            selected = currentRoute == Route.SETTINGS,
+            onClick = {
+                onBeforeNavigate()
+                onNavigate(Route.SETTINGS)
+            },
+        )
+    }
+}
+
+/**
+ * 底部槽位：悬浮 Dock 与历史多选操作条共用。
+ *
+ * 外边距、62dp 高度、描边与阴影只在这里定义一次；两边完全同高，
+ * 切换动画期间 Scaffold 的底部内边距不发生变化，页面内容不会跟着上下跳。
+ */
+@Composable
+private fun BottomSlot(content: @Composable RowScope.() -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .navigationBarsPadding()
             .padding(horizontal = 16.dp)
             .padding(top = 8.dp, bottom = 14.dp),
     ) {
@@ -212,36 +343,44 @@ private fun FloatingDock(
                 .padding(6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
+            content = content,
+        )
+    }
+}
+
+/** 多选操作条：外形与 Dock 一致，内部换成「全选 / 删除」。 */
+@Composable
+private fun HistorySelectionBar(state: HistorySelectionBarState) {
+    BottomSlot {
+        TextButton(
+            onClick = state.onSelectAllOrClear,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
         ) {
-            DockItem(
-                modifier = Modifier.weight(1f),
-                label = "首页",
-                icon = Icons.Outlined.Home,
-                selected = currentRoute == Route.HOME,
-                onClick = {
-                    onBeforeNavigate()
-                    onNavigate(Route.HOME)
-                },
+            Text(
+                text = if (state.allSelected) "取消全选" else "全选",
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.5.sp),
+                color = MaterialTheme.colorScheme.onSurface,
             )
-            DockItem(
-                modifier = Modifier.weight(1f),
-                label = "历史",
-                icon = Icons.Outlined.Schedule,
-                selected = currentRoute == Route.HISTORY,
-                onClick = {
-                    onBeforeNavigate()
-                    onNavigate(Route.HISTORY)
-                },
+        }
+        TextButton(
+            onClick = state.onDelete,
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight(),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Delete,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(16.dp),
             )
-            DockItem(
-                modifier = Modifier.weight(1f),
-                label = "设置",
-                icon = Icons.Outlined.Tune,
-                selected = currentRoute == Route.SETTINGS,
-                onClick = {
-                    onBeforeNavigate()
-                    onNavigate(Route.SETTINGS)
-                },
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "删除",
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.5.sp),
+                color = MaterialTheme.colorScheme.error,
             )
         }
     }

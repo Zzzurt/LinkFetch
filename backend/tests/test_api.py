@@ -49,6 +49,9 @@ def test_parse_rejects_when_token_not_configured(client, monkeypatch):
     resp = client.post("/api/parse", json={"url": "https://xhslink.com/a/x"})
 
     assert resp.status_code == 503
+    # 鉴权错误也必须走统一错误契约，App 才能显示消息而不是空错误卡
+    assert resp.json()["code"] == "service_unconfigured"
+    assert resp.json()["message"]
 
 
 def test_parse_success(client, open_mode):
@@ -77,7 +80,9 @@ def test_auth_required(client, monkeypatch):
     monkeypatch.setattr(main_module.settings, "api_token", "secret")
     monkeypatch.setattr(main_module.settings, "allow_unauthenticated", False)
 
-    assert client.post("/api/parse", json={"url": "https://xhslink.com/a/x"}).status_code == 401
+    unauthorized = client.post("/api/parse", json={"url": "https://xhslink.com/a/x"})
+    assert unauthorized.status_code == 401
+    assert unauthorized.json() == {"code": "unauthorized", "message": "无效的 API Token"}
     resp = client.post(
         "/api/parse",
         json={"url": "https://xhslink.com/a/x"},

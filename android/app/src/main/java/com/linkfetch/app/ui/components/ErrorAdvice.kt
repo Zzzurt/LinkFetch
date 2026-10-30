@@ -14,7 +14,7 @@ package com.linkfetch.app.ui.components
  * 所以这里只补 message **没说到**的动作；一旦某条 message 自己已经说全，就返回 null，
  * 绝不把同一句话换个说法再说一遍（那只会让错误卡变长、不变得更有用）。
  *
- * 错误码与后端统一（见 LocalParseException / ApiException），共四个。
+ * 错误码与后端统一（见 LocalParseException / ApiException），共五个。
  */
 fun errorAdvice(code: String?): String? = when (code) {
     // 现有文案只说「请稍后重试」，没说这次失败意味着什么。
@@ -25,6 +25,10 @@ fun errorAdvice(code: String?): String? = when (code) {
     // parse_failed 的文案都是对现象的描述（页面结构变化 / 未找到数据 / 不含媒体），没有下一步。
     "parse_failed" ->
         "平台接口可能已改版：可先尝试更新 App；仍失败时在设置中切换为「自建服务器」模式。"
+
+    // 凭证失效与链接无关，重试同一条链接不会变好；需要更新版本或换解析通道。
+    "credential_expired" ->
+        "这不是链接失效，而是接口凭证层面的问题；更新到最新版通常即可恢复，也可在设置中改用自建服务器。"
 
     // unsupported_link 与 network_error 的文案已含行动指引，无需补充。
     else -> null

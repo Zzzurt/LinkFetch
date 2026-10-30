@@ -20,3 +20,9 @@
 }
 # Keep generated `*$$serializer` classes.
 -keep,includedescriptorclasses class com.linkfetch.app.**$$serializer { *; }
+
+# ===== WorkManager =====
+# Worker 由 WorkManager 按类名反射实例化，R8 不能删掉它的构造函数。
+-keep class com.linkfetch.app.data.download.DownloadWorker {
+    <init>(android.content.Context, androidx.work.WorkerParameters);
+}

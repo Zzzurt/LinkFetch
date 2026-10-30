@@ -28,7 +28,11 @@ data class DownloadResult(
     val bytes: Long,
 )
 
-class DownloadException(message: String) : Exception(message)
+class DownloadException(
+    message: String,
+    /** 403：媒体直链的时效签名已过期，可重新解析后重试。 */
+    val linkExpired: Boolean = false,
+) : Exception(message)
 
 class MediaDownloader(
     private val context: Context,
@@ -50,7 +54,9 @@ class MediaDownloader(
             }
             val request = newRequest(item.url)
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw IOException(httpFailureMessage(response.code))
+                if (!response.isSuccessful) {
+                    throw HttpStatusException(response.code, httpFailureMessage(response.code))
+                }
                 val body = response.body ?: throw IOException("响应为空")
                 val total = body.contentLength()
                 val mime = body.contentType()?.toString()?.lowercase()
@@ -71,6 +77,11 @@ class MediaDownloader(
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: HttpStatusException) {
+            throw DownloadException(
+                e.message ?: "HTTP ${e.code}",
+                linkExpired = e.code == HTTP_FORBIDDEN,
+            )
         } catch (e: DownloadException) {
             throw e
         } catch (e: IOException) {
@@ -109,6 +120,9 @@ class MediaDownloader(
                 downloadToTemp(liveUrl, videoTmp) { p ->
                     onProgress((0.4f + p * 0.4f).coerceIn(0.4f, 0.8f))
                 }
+            } catch (e: HttpStatusException) {
+                // 交给外层统一标记 linkExpired，Live 视频 CDN 链接最容易过期
+                throw e
             } catch (e: IOException) {
                 throw DownloadException("Live 视频下载失败：${e.message ?: "网络异常"}")
             }
@@ -125,6 +139,11 @@ class MediaDownloader(
             DownloadResult(uri = uri.toString(), name = name, bytes = written)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: HttpStatusException) {
+            throw DownloadException(
+                "Live 图下载失败：${e.message ?: "HTTP ${e.code}"}",
+                linkExpired = e.code == HTTP_FORBIDDEN,
+            )
         } catch (e: DownloadException) {
             throw e
         } catch (e: IOException) {
@@ -150,7 +169,9 @@ class MediaDownloader(
         }
         val request = newRequest(url)
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException(httpFailureMessage(response.code))
+            if (!response.isSuccessful) {
+                throw HttpStatusException(response.code, httpFailureMessage(response.code))
+            }
             val body = response.body ?: throw IOException("响应为空")
             val total = body.contentLength()
             var written = 0L
@@ -295,7 +316,7 @@ class MediaDownloader(
         val request = newRequest(url)
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HLS 分段下载失败：${httpFailureMessage(response.code)}")
+                throw HttpStatusException(response.code, "HLS 分段下载失败：${httpFailureMessage(response.code)}")
             }
             val body = response.body ?: throw IOException("HLS 分段响应为空")
             body.byteStream().use { input ->
@@ -468,6 +489,11 @@ class MediaDownloader(
             "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
     }
 }
+
+/** 非 2xx 响应：需要带出状态码，供上层判断是否可以重新解析后重试。 */
+private class HttpStatusException(val code: Int, message: String) : IOException(message)
+
+private const val HTTP_FORBIDDEN = 403
 
 /** 统计实际写入字节数，用于 HLS（总大小未知）下载后回填 MediaStore SIZE。 */
 private class CountingOutputStream(

@@ -1,5 +1,10 @@
 package com.linkfetch.app.ui.settings
 
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -8,25 +13,36 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Contrast
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.OpenInBrowser
+import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +64,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -58,6 +77,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.linkfetch.app.BuildConfig
 import com.linkfetch.app.data.AppContainer
+import com.linkfetch.app.data.model.AppSettings
 import com.linkfetch.app.ui.components.GhostPill
 import com.linkfetch.app.ui.components.InkButton
 import com.linkfetch.app.ui.components.LoadingButton
@@ -69,26 +89,56 @@ import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.StrokeColors
 import com.linkfetch.app.ui.theme.TextColors
 import com.linkfetch.app.util.Platform
+import android.widget.Toast
 
 /** SettingsRepository 的出厂地址；只有改过它才算「用户配置过」 */
-private const val DEFAULT_BASE_URL = "http://10.0.2.2:8000"
+private const val DEFAULT_BASE_URL = AppSettings.DEFAULT_BASE_URL
 
 @Composable
 fun SettingsScreen(container: AppContainer) {
+    val appContext = LocalContext.current.applicationContext
     val viewModel: SettingsViewModel = viewModel(
         factory = viewModelFactory {
-            initializer { SettingsViewModel(container.settingsRepository, container.apiClient) }
+            initializer {
+                SettingsViewModel(
+                    repository = container.settingsRepository,
+                    apiClient = container.apiClient,
+                    updateChecker = container.updateChecker,
+                    appContext = appContext,
+                )
+            }
         },
     )
     val snackbarHostState = remember { SnackbarHostState() }
     var serverExpanded by remember { mutableStateOf(false) }
+    var showClearCacheConfirm by remember { mutableStateOf(false) }
+
+    // 三个平台共用同一个启动器：记录本次是哪个平台，回调里据此回填对应字段
+    var loginPlatform by remember { mutableStateOf<Platform?>(null) }
+    val loginLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        // 平台随结果一起返回：设置页若在登录期间被系统重建，remember 里的 loginPlatform 会丢失
+        val returned = Platform.fromKey(
+            result.data?.getStringExtra(CookieLoginActivity.EXTRA_PLATFORM).orEmpty(),
+        )
+        val platform = returned ?: loginPlatform
+        loginPlatform = null
+        if (result.resultCode == Activity.RESULT_OK && platform != null) {
+            result.data?.getStringExtra(CookieLoginActivity.EXTRA_COOKIE)
+                ?.let { viewModel.onCookieLogin(platform, it) }
+        }
+    }
+    val launchLogin: (Platform) -> Unit = { platform ->
+        loginPlatform = platform
+        loginLauncher.launch(CookieLoginActivity.intent(appContext, platform))
+    }
 
     // 保存 / 连接测试反馈统一走 Snackbar
     LaunchedEffect(viewModel.message) {
-        viewModel.message?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.consumeMessage()
-        }
+        val text = viewModel.message ?: return@LaunchedEffect
+        viewModel.consumeMessage()
+        snackbarHostState.showSnackbar(text)
     }
 
     ScreenFadeIn(modifier = Modifier.fillMaxSize()) {
@@ -265,6 +315,91 @@ fun SettingsScreen(container: AppContainer) {
                 }
             }
 
+            // ---------- 保存 ----------
+            SettingsSectionLabel("保存")
+            SettingsCard {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconCell(Icons.Filled.Download)
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "解析后自动保存",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = "解析完成后自动把全部内容存入相册（Android 9 及以下需先授予存储权限）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextColors.muted,
+                        )
+                    }
+                    Switch(
+                        checked = viewModel.autoSave,
+                        onCheckedChange = viewModel::onAutoSaveChange,
+                        colors = monoSwitchColors(),
+                    )
+                }
+            }
+
+            // ---------- 外观 ----------
+            SettingsSectionLabel("外观")
+            SettingsCard {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconCell(Icons.Filled.Contrast)
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "主题",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            text = "默认跟随系统，也可以固定为浅色或深色",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextColors.muted,
+                        )
+                    }
+                }
+                GroupDivider()
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ThemeOption(
+                        label = "跟随系统",
+                        selected = viewModel.themeMode == "system",
+                        onClick = { viewModel.onThemeModeChange("system") },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ThemeOption(
+                        label = "浅色",
+                        selected = viewModel.themeMode == "light",
+                        onClick = { viewModel.onThemeModeChange("light") },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ThemeOption(
+                        label = "深色",
+                        selected = viewModel.themeMode == "dark",
+                        onClick = { viewModel.onThemeModeChange("dark") },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+
             // ---------- 平台凭证 ----------
             SettingsSectionLabel(
                 title = "平台凭证",
@@ -277,6 +412,7 @@ fun SettingsScreen(container: AppContainer) {
                     label = "小红书 Cookie",
                     value = viewModel.xhsCookie,
                     onValueChange = viewModel::onXhsCookieChange,
+                    onLogin = { launchLogin(Platform.XHS) },
                 )
                 GroupDivider()
                 CredentialRow(
@@ -285,6 +421,7 @@ fun SettingsScreen(container: AppContainer) {
                     label = "抖音 Cookie",
                     value = viewModel.douyinCookie,
                     onValueChange = viewModel::onDouyinCookieChange,
+                    onLogin = { launchLogin(Platform.DOUYIN) },
                 )
                 GroupDivider()
                 CredentialRow(
@@ -293,6 +430,7 @@ fun SettingsScreen(container: AppContainer) {
                     label = "微博 Cookie",
                     value = viewModel.weiboCookie,
                     onValueChange = viewModel::onWeiboCookieChange,
+                    onLogin = { launchLogin(Platform.WEIBO) },
                 )
                 if (viewModel.xhsCookie.isNotBlank() ||
                     viewModel.douyinCookie.isNotBlank() ||
@@ -317,6 +455,32 @@ fun SettingsScreen(container: AppContainer) {
 
             // 下载质量一栏已取消：直连与保存都按原图原片走，没有可选的档位，
             // 留一个永远「即将上线」的控件只是在暗示一个不存在的承诺。
+
+            // ---------- 关于 ----------
+            SettingsSectionLabel("关于")
+            SettingsCard {
+                SettingsActionRow(
+                    icon = Icons.Filled.SystemUpdate,
+                    title = "检查更新",
+                    value = viewModel.updateStatus,
+                    enabled = !viewModel.checkingUpdate,
+                    onClick = viewModel::checkUpdate,
+                )
+                GroupDivider()
+                SettingsActionRow(
+                    icon = Icons.AutoMirrored.Filled.Article,
+                    title = "更新日志",
+                    enabled = !viewModel.checkingUpdate,
+                    onClick = viewModel::showChangelog,
+                )
+                GroupDivider()
+                SettingsActionRow(
+                    icon = Icons.Filled.Storage,
+                    title = "缓存占用",
+                    value = viewModel.cacheSize,
+                    onClick = { showClearCacheConfirm = true },
+                )
+            }
 
             VerticalSpace(26)
             Text(
@@ -344,6 +508,169 @@ fun SettingsScreen(container: AppContainer) {
                 .padding(bottom = 84.dp),
         )
     }
+
+    viewModel.updateDialog?.let { dialog ->
+        UpdateDialog(
+            state = dialog,
+            onDismiss = viewModel::dismissUpdateDialog,
+        )
+    }
+
+    if (showClearCacheConfirm) {
+        ClearCacheDialog(
+            onConfirm = {
+                showClearCacheConfirm = false
+                viewModel.clearAppCache()
+            },
+            onDismiss = { showClearCacheConfirm = false },
+        )
+    }
+}
+
+@Composable
+private fun SettingsActionRow(
+    icon: ImageVector,
+    title: String,
+    value: String? = null,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconCell(icon)
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        value?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = TextColors.muted,
+            )
+            Spacer(Modifier.width(4.dp))
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = TextColors.muted,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+@Composable
+private fun ThemeOption(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .height(36.dp)
+            .clip(Radii.field)
+            .background(
+                if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.surfaceVariant,
+            )
+            .border(1.dp, if (selected) Color.Transparent else StrokeColors.card, Radii.field)
+            .selectable(
+                selected = selected,
+                onClick = onClick,
+                role = Role.RadioButton,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
+private fun UpdateDialog(state: UpdateDialogState, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = state.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 360.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    text = state.body,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextColors.muted,
+                )
+            }
+        },
+        confirmButton = {
+            state.apkUrl?.let { url ->
+                TextButton(
+                    onClick = {
+                        val opened = runCatching {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                        }.isSuccess
+                        if (!opened) {
+                            Toast.makeText(context, "没有找到可打开链接的应用", Toast.LENGTH_SHORT).show()
+                        }
+                        onDismiss()
+                    },
+                ) {
+                    Text("下载更新")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        },
+    )
+}
+
+@Composable
+private fun ClearCacheDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "清理缓存",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        },
+        text = {
+            Text(
+                text = "将删除封面缓存与解析产生的临时文件，不影响已保存的图片、视频和历史记录。",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextColors.muted,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("清理") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 @Composable
@@ -432,6 +759,7 @@ private fun CredentialRow(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
+    onLogin: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val configured = value.isNotBlank()
@@ -487,6 +815,23 @@ private fun CredentialRow(
                     onValueChange = onValueChange,
                     label = label,
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    TextButton(
+                        onClick = onLogin,
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.OpenInBrowser,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text("网页登录获取", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
                 VerticalSpace(10)
             }
         }

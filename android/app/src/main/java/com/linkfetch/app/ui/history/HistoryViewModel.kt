@@ -6,13 +6,13 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.linkfetch.app.data.ParseResultStore
-import com.linkfetch.app.data.api.ApiClient
 import com.linkfetch.app.data.api.ApiException
 import com.linkfetch.app.data.db.HistoryDao
 import com.linkfetch.app.data.db.HistoryEntity
+import com.linkfetch.app.data.db.HistoryRepository
 import com.linkfetch.app.data.model.ParseResponseDto
-import com.linkfetch.app.data.parser.LocalParseClient
 import com.linkfetch.app.data.parser.LocalParseException
+import com.linkfetch.app.data.parser.ParseService
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -21,16 +21,19 @@ import kotlinx.serialization.json.Json
 
 class HistoryViewModel(
     private val dao: HistoryDao,
+    private val repository: HistoryRepository,
     private val json: Json,
-    private val localParseClient: LocalParseClient,
-    private val apiClient: ApiClient,
-    private val parseModeProvider: () -> String,
+    private val parseService: ParseService,
 ) : ViewModel() {
 
     val items: StateFlow<List<HistoryEntity>> = dao.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     var filter by mutableStateOf("all")
+        private set
+    var query by mutableStateOf("")
+        private set
+    var searchOpen by mutableStateOf(false)
         private set
     var selectedIds by mutableStateOf<Set<Long>>(emptySet())
         private set
@@ -42,13 +45,23 @@ class HistoryViewModel(
         private set
 
     val visibleItems: List<HistoryEntity>
-        get() = items.value.filter { filter == "all" || it.platform == filter }
+        get() = filterHistory(items.value, filter, query)
 
     val selectionMode: Boolean
         get() = selectedIds.isNotEmpty()
 
     fun onFilterChange(value: String) {
         filter = value
+        clearSelection()
+    }
+
+    fun toggleSearch() {
+        searchOpen = !searchOpen
+        if (!searchOpen) query = ""
+    }
+
+    fun onQueryChange(value: String) {
+        query = value
         clearSelection()
     }
 
@@ -111,9 +124,13 @@ class HistoryViewModel(
     fun open(entity: HistoryEntity): Boolean {
         val response = runCatching {
             json.decodeFromString(ParseResponseDto.serializer(), entity.mediaJson)
-        }.getOrNull() ?: return false
+        }.getOrNull() ?: run {
+            message = "这条记录的数据已损坏，无法打开"
+            return false
+        }
         ParseResultStore.originalUrl = entity.originalUrl
         ParseResultStore.result = response
+        ParseResultStore.historyId = entity.id
         return true
     }
 
@@ -123,23 +140,15 @@ class HistoryViewModel(
             reParsingId = entity.id
             message = null
             try {
-                val response = if (parseModeProvider() == "server") {
-                    apiClient.parse(entity.originalUrl)
+                val outcome = parseService.parse(entity.originalUrl)
+                // 原地刷新：保留记录时间与已存状态，只更新内容与可用的直链；
+                // 直链变过的旧下载任务会由 repository 一并清理，避免"已保存"标记说谎。
+                repository.refresh(entity, outcome.response)
+                message = if (outcome.viaServerFallback) {
+                    "已重新解析（直连失败，改用服务器）"
                 } else {
-                    localParseClient.parse(entity.originalUrl)
+                    "已重新解析，直链已更新"
                 }
-                val cover = response.medias.firstOrNull()?.let { it.cover ?: it.url }
-                dao.update(
-                    entity.copy(
-                        title = response.title,
-                        author = response.author,
-                        type = response.type,
-                        coverUrl = cover,
-                        mediaJson = json.encodeToString(ParseResponseDto.serializer(), response),
-                        downloadedCount = 0,
-                    ),
-                )
-                message = "已重新解析，直链已更新"
             } catch (e: LocalParseException) {
                 message = "重新解析失败：${e.message}"
             } catch (e: ApiException) {
@@ -154,6 +163,29 @@ class HistoryViewModel(
 
     fun consumeMessage() {
         message = null
+    }
+
+    companion object {
+        const val FILTER_ALL = "all"
+    }
+}
+
+/**
+ * 历史列表的筛选与搜索：平台筛选与关键词是「且」的关系。
+ * 关键词同时匹配标题与作者。
+ */
+internal fun filterHistory(
+    items: List<HistoryEntity>,
+    filter: String,
+    query: String,
+): List<HistoryEntity> {
+    val keyword = query.trim()
+    return items.filter { item ->
+        val matchesFilter = filter == HistoryViewModel.FILTER_ALL || item.platform == filter
+        val matchesQuery = keyword.isEmpty() ||
+            item.title.contains(keyword, ignoreCase = true) ||
+            item.author?.contains(keyword, ignoreCase = true) == true
+        matchesFilter && matchesQuery
     }
 }
 

@@ -1,11 +1,19 @@
 package com.linkfetch.app.ui.theme
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 /**
  * 黑白灰（Mono）配色。
@@ -65,15 +73,51 @@ private val DarkColors = darkColorScheme(
     surfaceTint = Color.Transparent,
 )
 
+/**
+ * 当前生效的深浅色。
+ *
+ * 所有语义色（[TextColors] 等）都从这里取值，而不是各自调用 [isSystemInDarkTheme]：
+ * 用户可以在设置里强制浅色 / 深色，若色板仍跟着系统走，就会出现「深色背景 + 浅色模式的灰字」。
+ */
+val LocalDarkTheme = staticCompositionLocalOf { false }
+
+/** 设置里的主题模式 → 实际是否深色。 */
+@Composable
+fun resolveDarkTheme(themeMode: String): Boolean = when (themeMode) {
+    "light" -> false
+    "dark" -> true
+    else -> isSystemInDarkTheme()
+}
+
 @Composable
 fun LinkFetchTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        typography = LinkFetchTypography,
-        shapes = LinkFetchShapes,
-        content = content,
-    )
+    // 状态栏 / 导航栏图标随主题反色。放在主题里而不是各 Activity 里，
+    // 设置页切换主题时能立即生效，不必等页面重建。
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = view.context.findActivity()?.window ?: return@SideEffect
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
+            }
+        }
+    }
+    CompositionLocalProvider(LocalDarkTheme provides darkTheme) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) DarkColors else LightColors,
+            typography = LinkFetchTypography,
+            shapes = LinkFetchShapes,
+            content = content,
+        )
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

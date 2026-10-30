@@ -14,6 +14,16 @@ _HOSTS: Dict[Platform, Tuple[str, ...]] = {
 }
 
 
+def is_platform_host(host: str) -> bool:
+    """判断 host 是否属于受支持平台，用于限制 Cookie 跨站重定向。"""
+    host = (host or "").lower()
+    return any(
+        host == suffix or host.endswith("." + suffix)
+        for suffixes in _HOSTS.values()
+        for suffix in suffixes
+    )
+
+
 def detect_platform(url: str) -> Platform:
     """根据链接 host 识别平台，识别失败抛出 unsupported_link 错误。"""
     try:

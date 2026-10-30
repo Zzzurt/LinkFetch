@@ -1,0 +1,14 @@
+{
+  "platform": "douyin",
+  "title": "一条没有署名的视频",
+  "author": null,
+  "type": "video",
+  "medias": [
+    {
+      "kind": "video",
+      "url": "https://v3-web.douyinvod.com/video/tos/cn/tos-cn-ve-15/1.mp4",
+      "cover": "https://p3-sign.douyinpic.com/cover.jpeg",
+      "quality": "1080p"
+    }
+  ]
+}

@@ -2,21 +2,21 @@ package com.linkfetch.app.ui.result
 
 import android.net.Uri
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.linkfetch.app.data.AppContainer
 import com.linkfetch.app.data.ParseResultStore
-import com.linkfetch.app.data.download.DownloadException
+import com.linkfetch.app.data.db.DownloadStatus
+import com.linkfetch.app.data.db.DownloadTaskEntity
 import com.linkfetch.app.data.model.ParseResponseDto
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 /** 单个媒体的下载状态。 */
 sealed interface ItemState {
@@ -26,24 +26,23 @@ sealed interface ItemState {
     data class Failed(val message: String) : ItemState
 }
 
+/**
+ * 结果页只负责「排队」与「展示」，真正的下载在 WorkManager 里跑。
+ * 所有状态来自 download_tasks 表，因此退出页面再回来也能看到进度与已保存标记。
+ */
 class ResultViewModel(
     private val container: AppContainer,
-    /** 通知能力通过接口注入：ViewModel 不再持有 Context，单测可替换为 fake。 */
-    private val notifier: DownloadNotifier,
 ) : ViewModel() {
 
     val result: ParseResponseDto? get() = ParseResultStore.result
     val originalUrl: String get() = ParseResultStore.originalUrl
 
-    /**
-     * 用 StateFlow 而非 mutableStateOf：下载进度回调运行在 Dispatchers.IO 线程，
-     * StateFlow.update 是原子的，可避免「读—改—写」互相覆盖导致状态丢失。
-     */
     private val _itemStates = MutableStateFlow<Map<Int, ItemState>>(emptyMap())
     val itemStates: StateFlow<Map<Int, ItemState>> = _itemStates.asStateFlow()
 
-    var downloading by mutableStateOf(false)
-        private set
+    private var activeTasks by mutableIntStateOf(0)
+    private var enqueuing by mutableStateOf(false)
+
     var message by mutableStateOf<String?>(null)
         private set
     var error by mutableStateOf<String?>(null)
@@ -51,148 +50,122 @@ class ResultViewModel(
     var lastSavedUri by mutableStateOf<Uri?>(null)
         private set
 
-    /** 串行化下载：避免用户快速连点造成多个任务并发写同一份状态。 */
-    private val downloadMutex = Mutex()
+    var selectedIndices by mutableStateOf<Set<Int>>(emptySet())
+        private set
 
-    private var cachedHistoryId: Long? = null
-    private var historyIdResolved = false
+    val selectionMode: Boolean get() = selectedIndices.isNotEmpty()
 
-    /** 首次使用时再解析历史记录 ID，避免 init 中的异步赋值与下载动作竞态。 */
-    private suspend fun historyId(): Long? {
-        if (!historyIdResolved) {
-            cachedHistoryId = if (originalUrl.isNotBlank()) {
-                container.historyDao.getLatestByUrl(originalUrl)?.id
-            } else {
-                null
-            }
-            historyIdResolved = true
+    /** 队列里有任务，或正在把选中项写进队列。 */
+    val downloading: Boolean get() = enqueuing || activeTasks > 0
+
+    private val historyIdReady = CompletableDeferred<Long?>()
+
+    private var seenSnapshot = false
+    private var previousActive = 0
+    private var previousDone = 0
+    private var previousFailed = 0
+
+    init {
+        // 批量解析后带过来的一次性提示（"已取回 N 条"），只展示一次
+        ParseResultStore.notice?.let {
+            message = it
+            ParseResultStore.notice = null
         }
-        return cachedHistoryId
+        viewModelScope.launch {
+            val id = ParseResultStore.historyId ?: run {
+                val found = if (originalUrl.isNotBlank()) {
+                    container.historyDao.getLatestByUrl(originalUrl)?.id
+                } else {
+                    null
+                }
+                ParseResultStore.historyId = found
+                found
+            }
+            historyIdReady.complete(id)
+            if (id != null) {
+                container.downloadTaskDao.observeForHistory(id).collect(::applyTasks)
+            }
+        }
     }
 
     fun downloadAll() {
-        val items = result?.medias ?: return
-        if (items.isEmpty() || downloading) return
-        viewModelScope.launch {
-            downloading = true
-            error = null
-            var success = 0
-            var failed = 0
-            items.indices.forEach { index ->
-                // 默认行为：Live 图按 Live 格式保存，静态图按原图保存
-                if (downloadOneInternal(index, preferLive = true)) success++ else failed++
-            }
-            downloading = false
-            if (success > 0) {
-                message = if (failed > 0) "已保存 $success 个，失败 $failed 个" else "已保存 $success 个文件到相册"
-                historyId()?.let { id -> container.historyDao.updateDownloadedCount(id, success) }
-                notifier.notifySaved(success, lastSavedUri)
-            } else if (failed > 0) {
-                error = "保存失败，可点击失败项重试"
-            }
-        }
+        enqueue(result?.medias?.indices?.toList().orEmpty(), preferLive = true)
     }
 
     fun retryFailed() {
-        val indices = _itemStates.value.filterValues { it is ItemState.Failed }.keys
-        if (indices.isEmpty() || downloading) return
+        container.notificationPermission.ensure()
         viewModelScope.launch {
-            downloading = true
+            val id = historyIdReady.await() ?: return@launch
+            enqueuing = true
             error = null
-            var success = 0
-            indices.forEach { index ->
-                if (downloadOneInternal(index, preferLive = true)) success++
-            }
-            downloading = false
-            if (success > 0) {
-                message = "重试成功 $success 个"
-                historyId()?.let { id ->
-                    val current = container.historyDao.getLatestByUrl(originalUrl)?.downloadedCount ?: 0
-                    container.historyDao.updateDownloadedCount(id, current + success)
-                }
-                notifier.notifySaved(success, lastSavedUri)
+            try {
+                val count = container.downloadQueue.retryFailed(id)
+                if (count > 0) message = "已重试 $count 项"
+            } catch (e: Exception) {
+                error = "重试失败：${e.message ?: "未知错误"}"
+            } finally {
+                enqueuing = false
             }
         }
     }
 
     /** 兼容入口：默认按 Live 格式下载（无 Live 数据时下载静态图）。 */
     fun downloadOne(index: Int) {
-        if (downloading) return
-        launchDownloadOne(index, preferLive = true)
+        enqueue(listOf(index), preferLive = true)
     }
 
-    /** 下载 Live 图的 Motion Photo 版本。 */
     fun downloadOneLive(index: Int) {
         val item = result?.medias?.getOrNull(index) ?: return
-        if (downloading || !item.live) return
-        launchDownloadOne(index, preferLive = true)
+        if (!item.live) return
+        enqueue(listOf(index), preferLive = true)
     }
 
     /** 仅下载静态原图（不包含动态效果）。 */
     fun downloadOneStatic(index: Int) {
-        if (result?.medias?.getOrNull(index) == null || downloading) return
-        launchDownloadOne(index, preferLive = false)
+        if (result?.medias?.getOrNull(index) == null) return
+        enqueue(listOf(index), preferLive = false)
+    }
+
+    fun toggleSelected(index: Int) {
+        selectedIndices = if (index in selectedIndices) {
+            selectedIndices - index
+        } else {
+            selectedIndices + index
+        }
+    }
+
+    fun clearSelection() {
+        selectedIndices = emptySet()
+    }
+
+    /** 从底部「选择」进入多选：默认勾选第一项尚未保存的内容。 */
+    fun enterSelection() {
+        val indices = result?.medias?.indices?.toList().orEmpty()
+        if (indices.isEmpty()) return
+        val saved = _itemStates.value.filterValues { it is ItemState.Done }.keys
+        val first = indices.firstOrNull { it !in saved } ?: indices.first()
+        selectedIndices = setOf(first)
+    }
+
+    fun selectAllOrClear() {
+        val all = result?.medias?.indices?.toSet().orEmpty()
+        selectedIndices = if (all.isNotEmpty() && selectedIndices.containsAll(all)) {
+            emptySet()
+        } else {
+            all
+        }
+    }
+
+    fun saveSelected() {
+        val indices = selectedIndices.toList()
+        if (indices.isEmpty()) return
+        enqueue(indices, preferLive = true)
+        clearSelection()
     }
 
     /** 用户在 API 28 及以下拒绝了存储权限：给出明确原因，而不是让下载静默失败。 */
     fun onStoragePermissionDenied() {
         error = "未获得存储权限，无法保存到相册。可在系统设置中为本应用开启存储权限后重试。"
-    }
-
-    private fun launchDownloadOne(index: Int, preferLive: Boolean) {
-        viewModelScope.launch {
-            downloading = true
-            error = null
-            if (downloadOneInternal(index, preferLive)) {
-                message = "已保存到相册"
-                historyId()?.let { id ->
-                    val current = container.historyDao.getLatestByUrl(originalUrl)?.downloadedCount ?: 0
-                    container.historyDao.updateDownloadedCount(id, current + 1)
-                }
-                notifier.notifySaved(1, lastSavedUri)
-            } else {
-                // 失败原因必须直接说出来。此前这里只设 error（显示在网格**尾部**的 ErrorCard），
-                // 用户点了视频/图片上的保存按钮、看到红色 × 之后，要一路滚到底才知道为什么失败
-                // —— 大多数情况下根本不会去滚。改成同时走 message（Snackbar），就地给出原因。
-                val reason = (_itemStates.value[index] as? ItemState.Failed)?.message
-                error = "保存失败，可重试"
-                message = "保存失败：${reason ?: "未知原因"}"
-            }
-            downloading = false
-        }
-    }
-
-    /** 下载单个媒体，成功返回 true；同时维护 itemStates 与 lastSavedUri。 */
-    private suspend fun downloadOneInternal(index: Int, preferLive: Boolean): Boolean =
-        downloadMutex.withLock {
-            val item = result?.medias?.getOrNull(index) ?: return@withLock false
-            updateState(index, ItemState.Downloading(0f))
-            val useLive = preferLive && item.live && !item.liveUrl.isNullOrBlank()
-            try {
-                val res = if (useLive) {
-                    container.mediaDownloader.downloadLive(item, prefix()) { progress ->
-                        updateState(index, ItemState.Downloading(progress))
-                    }
-                } else {
-                    container.mediaDownloader.download(item, prefix()) { progress ->
-                        updateState(index, ItemState.Downloading(progress))
-                    }
-                }
-                updateState(index, ItemState.Done)
-                lastSavedUri = Uri.parse(res.uri)
-                true
-            } catch (e: DownloadException) {
-                updateState(index, ItemState.Failed(e.message ?: "保存失败"))
-                false
-            } catch (e: Exception) {
-                // 兜底：MediaDownloader 已收敛大部分异常，这里再保证 UI 不会因单条失败而崩溃
-                updateState(index, ItemState.Failed(e.message ?: "保存失败"))
-                false
-            }
-        }
-
-    private fun updateState(index: Int, state: ItemState) {
-        _itemStates.update { it + (index to state) }
     }
 
     fun dismissMessage() {
@@ -207,5 +180,62 @@ class ResultViewModel(
         lastSavedUri = null
     }
 
-    private fun prefix(): String = result?.title?.take(24)?.ifBlank { "LinkFetch" } ?: "LinkFetch"
+    private fun enqueue(indices: Collection<Int>, preferLive: Boolean) {
+        val data = result ?: return
+        if (indices.isEmpty() || enqueuing) return
+        // 所有保存入口（单张 / 批量 / 重试 / 自动保存）都在此汇合，首次保存前统一请求通知权限
+        container.notificationPermission.ensure()
+        viewModelScope.launch {
+            enqueuing = true
+            error = null
+            try {
+                val id = historyIdReady.await()
+                if (id == null) {
+                    error = "没有找到这条解析记录，请返回首页重新解析"
+                    return@launch
+                }
+                val count = container.downloadQueue.enqueue(id, data, indices, preferLive)
+                message = when {
+                    count == 0 -> "所选内容已在队列或已保存"
+                    indices.size == 1 -> "已加入保存队列"
+                    else -> "已加入保存队列（$count 项）"
+                }
+            } catch (e: Exception) {
+                error = "加入保存队列失败：${e.message ?: "未知错误"}"
+            } finally {
+                enqueuing = false
+            }
+        }
+    }
+
+    private fun applyTasks(tasks: List<DownloadTaskEntity>) {
+        _itemStates.value = downloadStates(tasks, result?.medias.orEmpty())
+        activeTasks = tasks.count {
+            it.status == DownloadStatus.QUEUED || it.status == DownloadStatus.RUNNING
+        }
+        val done = tasks.count { it.status == DownloadStatus.DONE }
+        val failed = tasks.count { it.status == DownloadStatus.FAILED }
+
+        if (seenSnapshot && previousActive > 0 && activeTasks == 0) {
+            val doneDelta = done - previousDone
+            val failedDelta = failed - previousFailed
+            if (doneDelta > 0 || failedDelta > 0) {
+                lastSavedUri = tasks
+                    .filter { it.status == DownloadStatus.DONE }
+                    .maxByOrNull { it.updatedAt }
+                    ?.savedUri
+                    ?.let(Uri::parse)
+                message = when {
+                    doneDelta > 0 && failedDelta > 0 ->
+                        "已保存 $doneDelta 个，$failedDelta 个失败"
+                    doneDelta > 0 -> "已保存 $doneDelta 个文件到相册"
+                    else -> "保存失败，可点击失败项重试"
+                }
+            }
+        }
+        seenSnapshot = true
+        previousActive = activeTasks
+        previousDone = done
+        previousFailed = failed
+    }
 }

@@ -27,8 +27,6 @@ class ApiClient(
         .readTimeout(120, TimeUnit.SECONDS)
         .build(),
 ) {
-    private val json = Json { ignoreUnknownKeys = true }
-
     suspend fun parse(url: String): ParseResponseDto = withContext(Dispatchers.IO) {
         val settings = settingsProvider()
         ensureTransportAllowed(settings)
@@ -84,7 +82,8 @@ class ApiClient(
                     val err = runCatching { json.decodeFromString(ApiErrorDto.serializer(), text) }.getOrNull()
                     throw ApiException(
                         code = err?.code?.takeIf { it.isNotBlank() } ?: "http_${response.code}",
-                        message = err?.message ?: "服务器返回错误（HTTP ${response.code}）",
+                        message = err?.message?.takeIf { it.isNotBlank() }
+                            ?: "服务器返回错误（HTTP ${response.code}）",
                     )
                 }
                 return decode(text)
@@ -104,5 +103,10 @@ class ApiClient(
         }
         return "无法连接解析服务：请确认后端已启动、设置页地址正确（真机用局域网 IP 或公网地址，" +
             "10.0.2.2 仅模拟器可用），且手机与服务器网络互通"
+    }
+
+    companion object {
+        /** 与服务端共享的契约 fixture 也用它解码，保证测试覆盖的配置与实际请求一致。 */
+        internal val json = Json { ignoreUnknownKeys = true }
     }
 }

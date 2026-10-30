@@ -12,6 +12,9 @@ backend/.env
 # 内部架构文档（仅本地，不公开）
 CODE_WIKI.md
 
+# 本机便携开发工具链（SDK / Python / Gradle 缓存，不入库）
+.devtools/
+
 # Android / Gradle
 .gradle/
 build/

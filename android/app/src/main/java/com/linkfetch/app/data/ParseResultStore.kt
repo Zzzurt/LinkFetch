@@ -8,5 +8,11 @@ import com.linkfetch.app.data.model.ParseResponseDto
 object ParseResultStore {
     var originalUrl: String = ""
     var result: ParseResponseDto? = null
+
+    /** 当前结果对应的历史记录 id：保存任务、已保存状态都以它为归属。 */
+    var historyId: Long? = null
+
+    /** 一次性提示：批量解析后带到结果页展示，展示后即清空。 */
+    var notice: String? = null
 }
 

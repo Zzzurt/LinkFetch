@@ -4,6 +4,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- WorkManager 前台服务：保存队列在后台继续跑 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!--
       API 29 起为分区存储，向 MediaStore 写入自身媒体无需权限；
       但 API 28 及以下（Android 8/9）写入共享存储必须持有该权限，否则 insert 会抛 SecurityException。
@@ -11,6 +14,14 @@
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+
+    <!-- Android 11+ 包可见性：用于列出可打开原链接的浏览器 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
 
     <application
         android:name=".LinkFetchApp"
@@ -31,12 +42,68 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.LinkFetch.Splash"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- 从其他 App 分享一段文字（平台分享文案）进来。
+                 用 text/* 而不是 text/plain：部分平台会以 text/html、text/* 发送，
+                 只声明 text/plain 时不会出现在它们的分享面板里。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+            </intent-filter>
+
+            <!-- 部分平台把笔记当作图片卡片分享（EXTRA_STREAM + EXTRA_TEXT），
+                 只匹配文本时会漏掉；没有文字时由 MainActivity 给出提示。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+
+            <!-- 在浏览器里直接打开受支持平台的链接 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="xhslink.com" />
+                <data android:host="xiaohongshu.com" />
+                <data android:host="www.xiaohongshu.com" />
+                <data android:host="v.douyin.com" />
+                <data android:host="douyin.com" />
+                <data android:host="www.douyin.com" />
+                <data android:host="weibo.com" />
+                <data android:host="www.weibo.com" />
+                <data android:host="m.weibo.cn" />
+                <data android:host="weibo.cn" />
+                <data android:host="x.com" />
+                <data android:host="www.x.com" />
+                <data android:host="twitter.com" />
+                <data android:host="www.twitter.com" />
+                <data android:host="t.co" />
+            </intent-filter>
         </activity>
+
+        <!-- 平台网页登录：旋转时保留 WebView 内的登录进度，避免重新加载 -->
+        <activity
+            android:name=".ui.settings.CookieLoginActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- API 34+ 要求前台服务声明类型；WorkManager 用 dataSync 跑下载 -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
     </application>
 
 </manifest>

@@ -3,8 +3,10 @@ package com.linkfetch.app.ui.result
 import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +18,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -31,7 +34,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -39,11 +41,13 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -85,10 +89,14 @@ import com.linkfetch.app.data.ParseResultStore
 import com.linkfetch.app.data.model.MediaItemDto
 import com.linkfetch.app.data.model.ParseResponseDto
 import com.linkfetch.app.ui.components.InkButton
+import com.linkfetch.app.ui.components.PaperMenu
+import com.linkfetch.app.ui.components.PaperMenuLabel
+import com.linkfetch.app.ui.components.PaperMenuItem
 import com.linkfetch.app.ui.components.ScreenFadeIn
 import com.linkfetch.app.ui.components.SectionHeader
 import com.linkfetch.app.ui.components.ShimmerImage
 import com.linkfetch.app.ui.components.SquareCheck
+import com.linkfetch.app.ui.components.sharedCover
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.StrokeColors
@@ -103,10 +111,9 @@ fun ResultScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    val appContext = context.applicationContext
     val viewModel: ResultViewModel = viewModel(
         factory = viewModelFactory {
-            initializer { ResultViewModel(container, AndroidDownloadNotifier(appContext)) }
+            initializer { ResultViewModel(container) }
         },
     )
     val result = viewModel.result
@@ -129,10 +136,19 @@ fun ResultScreen(
         }
     }
 
-    val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) {
-        viewModel.downloadAll()
+    // 打开原链接：必须绕开本应用自己的深链过滤器，否则会把自己再拉起来一次
+    val onOpenOriginal: () -> Unit = {
+        val url = ParseResultStore.originalUrl
+        if (url.isBlank()) {
+            scope.launch { snackbarHostState.showSnackbar("原链接已丢失，请重新解析") }
+        } else {
+            val opened = resolveBrowserIntent(context, url)?.let { intent ->
+                runCatching { context.startActivity(intent) }.isSuccess
+            } ?: false
+            if (!opened) {
+                scope.launch { snackbarHostState.showSnackbar("没有找到可打开该链接的浏览器") }
+            }
+        }
     }
 
     // API 28 及以下：向共享存储写入必须持有 WRITE_EXTERNAL_STORAGE（API 29+ 分区存储无需权限）
@@ -146,38 +162,32 @@ fun ResultScreen(
             context,
             Manifest.permission.WRITE_EXTERNAL_STORAGE,
         ) != PackageManager.PERMISSION_GRANTED
-    val needsNotificationPermission = Build.VERSION.SDK_INT >= 33 &&
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.POST_NOTIFICATIONS,
-        ) != PackageManager.PERMISSION_GRANTED
-
     LaunchedEffect(viewModel.message) {
-        viewModel.message?.let { text ->
-            val savedUri = viewModel.lastSavedUri
-            val snackbarResult = if (savedUri != null) {
-                // 下载成功：轻震反馈
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                snackbarHostState.showSnackbar(
-                    message = text,
-                    actionLabel = "查看",
-                    duration = androidx.compose.material3.SnackbarDuration.Short,
+        val text = viewModel.message ?: return@LaunchedEffect
+        val savedUri = viewModel.lastSavedUri
+        // 先消费再展示：若在 Snackbar 显示期间离开页面，协程被取消也不会让同一提示下次重放
+        viewModel.dismissMessage()
+        viewModel.consumeSavedUri()
+        val snackbarResult = if (savedUri != null) {
+            // 下载成功：轻震反馈
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            snackbarHostState.showSnackbar(
+                message = text,
+                actionLabel = "查看",
+                duration = androidx.compose.material3.SnackbarDuration.Short,
+            )
+        } else {
+            snackbarHostState.showSnackbar(text)
+        }
+        if (snackbarResult == androidx.compose.material3.SnackbarResult.ActionPerformed && savedUri != null) {
+            runCatching {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW).apply {
+                        data = savedUri
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    },
                 )
-            } else {
-                snackbarHostState.showSnackbar(text)
             }
-            if (snackbarResult == androidx.compose.material3.SnackbarResult.ActionPerformed && savedUri != null) {
-                runCatching {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW).apply {
-                            data = savedUri
-                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        },
-                    )
-                }
-            }
-            viewModel.dismissMessage()
-            viewModel.consumeSavedUri()
         }
     }
     LaunchedEffect(Unit) {
@@ -195,6 +205,7 @@ fun ResultScreen(
                 ResultTopBar(
                     onBack = onBack,
                     onCopyOriginalUrl = onCopyOriginalUrl,
+                    onOpenOriginal = onOpenOriginal,
                 )
             },
             bottomBar = {
@@ -210,16 +221,20 @@ fun ResultScreen(
                             total = total,
                             downloading = viewModel.downloading,
                             failedCount = failedCount,
+                            selectionMode = viewModel.selectionMode,
+                            selectionCount = viewModel.selectedIndices.size,
                             onDownloadAll = {
-                                when {
-                                    needsLegacyStoragePermission ->
-                                        legacyStorageLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                                    needsNotificationPermission ->
-                                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    else -> viewModel.downloadAll()
+                                if (needsLegacyStoragePermission) {
+                                    legacyStorageLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                } else {
+                                    viewModel.downloadAll()
                                 }
                             },
                             onRetryFailed = viewModel::retryFailed,
+                            onEnterSelection = viewModel::enterSelection,
+                            onSelectAllOrClear = viewModel::selectAllOrClear,
+                            onClearSelection = viewModel::clearSelection,
+                            onSaveSelected = viewModel::saveSelected,
                         )
                     }
                 }
@@ -232,9 +247,13 @@ fun ResultScreen(
                     itemStates = itemStates,
                     downloading = viewModel.downloading,
                     error = viewModel.error,
+                    selectionMode = viewModel.selectionMode,
+                    selectedIndices = viewModel.selectedIndices,
+                    onToggleSelect = viewModel::toggleSelected,
                     onDownloadOne = viewModel::downloadOne,
                     onLiveChoice = { liveChoiceIndex = it },
                     onPreview = { previewIndex = it },
+                    onDismissError = viewModel::dismissError,
                     modifier = Modifier
                         .padding(padding)
                         .fillMaxSize(),
@@ -285,16 +304,16 @@ fun ResultScreen(
 private fun ResultTopBar(
     onBack: () -> Unit,
     onCopyOriginalUrl: () -> Unit,
+    onOpenOriginal: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .statusBarsPadding()
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CircleIconButton(
-            icon = Icons.Filled.ArrowBack,
+            icon = Icons.AutoMirrored.Filled.ArrowBack,
             contentDescription = "返回",
             onClick = onBack,
         )
@@ -305,11 +324,36 @@ private fun ResultTopBar(
             fontWeight = FontWeight.SemiBold,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
-        CircleIconButton(
-            icon = Icons.Filled.OpenInNew,
-            contentDescription = "复制原链接",
-            onClick = onCopyOriginalUrl,
-        )
+        var menuOpen by remember { mutableStateOf(false) }
+        Box {
+            CircleIconButton(
+                icon = Icons.AutoMirrored.Filled.OpenInNew,
+                contentDescription = "原链接操作",
+                onClick = { menuOpen = true },
+            )
+            PaperMenu(
+                expanded = menuOpen,
+                onDismissRequest = { menuOpen = false },
+            ) {
+                PaperMenuLabel("原链接 / LINK")
+                PaperMenuItem(
+                    icon = Icons.Filled.OpenInBrowser,
+                    label = "在浏览器中打开",
+                    onClick = {
+                        menuOpen = false
+                        onOpenOriginal()
+                    },
+                )
+                PaperMenuItem(
+                    icon = Icons.Filled.ContentCopy,
+                    label = "复制原链接",
+                    onClick = {
+                        menuOpen = false
+                        onCopyOriginalUrl()
+                    },
+                )
+            }
+        }
     }
 }
 
@@ -337,22 +381,28 @@ private fun CircleIconButton(
     }
 }
 
-/** 常驻底部操作条：进度 + 全部保存 */
+/** 常驻底部操作条：进度 / 全部保存 / 多选保存 */
 @Composable
 private fun DownloadBottomBar(
     downloaded: Int,
     total: Int,
     downloading: Boolean,
     failedCount: Int,
+    selectionMode: Boolean,
+    selectionCount: Int,
     onDownloadAll: () -> Unit,
     onRetryFailed: () -> Unit,
+    onEnterSelection: () -> Unit,
+    onSelectAllOrClear: () -> Unit,
+    onClearSelection: () -> Unit,
+    onSaveSelected: () -> Unit,
 ) {
     val fraction = if (total > 0) downloaded.toFloat() / total else 0f
     val allDone = total > 0 && downloaded == total
     // 大字体下横向排列会把进度文案挤成省略号、按钮也会被压缩，改成上下两行堆叠
     val stacked = LocalDensity.current.fontScale >= 1.3f
     // 还没开始保存时折叠为单行：此时"已保存 0 / 3"和空进度条没有任何信息量
-    val collapsed = !downloading && downloaded == 0 && failedCount == 0
+    val collapsed = !selectionMode && !downloading && downloaded == 0 && failedCount == 0
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -361,45 +411,55 @@ private fun DownloadBottomBar(
             .border(1.dp, StrokeColors.card, Radii.card)
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        if (collapsed) {
-            InkButton(
-                text = "保存全部",
-                onClick = onDownloadAll,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = total > 0,
-                trailingArrow = false,
-            )
-        } else if (stacked) {
-            DownloadProgress(
-                downloaded = downloaded,
-                total = total,
-                fraction = fraction,
-                allDone = allDone,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(10.dp))
-            InkButton(
-                text = when {
-                    downloading -> "保存中…"
-                    allDone -> "已全部保存"
-                    else -> "保存全部"
-                },
-                onClick = onDownloadAll,
-                modifier = Modifier.fillMaxWidth(),
-                enabled = total > 0 && !allDone && !downloading,
-                loading = downloading,
-                trailingArrow = false,
-            )
-        } else {
+        if (selectionMode) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "已选 $selectionCount 项",
+                    style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = TabularNums),
+                )
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = onSelectAllOrClear) {
+                    Text(if (selectionCount == total) "取消全选" else "全选")
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onClearSelection) {
+                    Text("取消")
+                }
+                Spacer(Modifier.weight(1f))
+                InkButton(
+                    text = "保存所选",
+                    onClick = onSaveSelected,
+                    enabled = selectionCount > 0 && !downloading,
+                    loading = downloading,
+                    compact = true,
+                    trailingArrow = false,
+                )
+            }
+        } else {
+            if (collapsed) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    InkButton(
+                        text = "保存全部",
+                        onClick = onDownloadAll,
+                        modifier = Modifier.weight(1f),
+                        enabled = total > 0,
+                        trailingArrow = false,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    TextButton(onClick = onEnterSelection, enabled = total > 0) {
+                        Text("选择")
+                    }
+                }
+            } else if (stacked) {
                 DownloadProgress(
                     downloaded = downloaded,
                     total = total,
                     fraction = fraction,
                     allDone = allDone,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.height(10.dp))
                 InkButton(
                     text = when {
                         downloading -> "保存中…"
@@ -407,34 +467,92 @@ private fun DownloadBottomBar(
                         else -> "保存全部"
                     },
                     onClick = onDownloadAll,
+                    modifier = Modifier.fillMaxWidth(),
                     enabled = total > 0 && !allDone && !downloading,
                     loading = downloading,
-                    compact = true,
                     trailingArrow = false,
                 )
+                if (!downloading) {
+                    TextButton(
+                        onClick = onEnterSelection,
+                        enabled = total > 0,
+                        modifier = Modifier.align(Alignment.End),
+                    ) {
+                        Text("选择保存项")
+                    }
+                }
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    DownloadProgress(
+                        downloaded = downloaded,
+                        total = total,
+                        fraction = fraction,
+                        allDone = allDone,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    InkButton(
+                        text = when {
+                            downloading -> "保存中…"
+                            allDone -> "已全部保存"
+                            else -> "保存全部"
+                        },
+                        onClick = onDownloadAll,
+                        enabled = total > 0 && !allDone && !downloading,
+                        loading = downloading,
+                        compact = true,
+                        trailingArrow = false,
+                    )
+                }
+                if (!downloading) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        TextButton(onClick = onEnterSelection, enabled = total > 0) {
+                            Text("选择保存项")
+                        }
+                        Spacer(Modifier.weight(1f))
+                        if (failedCount > 0) {
+                            RetryFailedAction(failedCount, onRetryFailed)
+                        }
+                    }
+                }
+            }
+            if (failedCount > 0 && (collapsed || stacked || downloading)) {
+                Spacer(Modifier.height(2.dp))
+                RetryFailedAction(
+                    failedCount = failedCount,
+                    onClick = onRetryFailed,
+                    enabled = !downloading,
+                    modifier = Modifier.align(Alignment.End),
+                )
             }
         }
-        if (failedCount > 0) {
-            Spacer(Modifier.height(2.dp))
-            TextButton(
-                onClick = onRetryFailed,
-                enabled = !downloading,
-                modifier = Modifier.align(Alignment.End),
-            ) {
-                Icon(
-                    Icons.Filled.ErrorOutline,
-                    contentDescription = null,
-                    modifier = Modifier.size(14.dp),
-                    tint = MaterialTheme.colorScheme.error,
-                )
-                Spacer(Modifier.width(5.dp))
-                Text(
-                    text = "重试失败（$failedCount）",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        }
+    }
+}
+
+@Composable
+private fun RetryFailedAction(
+    failedCount: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier,
+    ) {
+        Icon(
+            Icons.Filled.ErrorOutline,
+            contentDescription = null,
+            modifier = Modifier.size(14.dp),
+            tint = MaterialTheme.colorScheme.error,
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            text = "重试失败（$failedCount）",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
     }
 }
 
@@ -456,7 +574,7 @@ private fun DownloadProgress(
         )
         Spacer(Modifier.height(7.dp))
         LinearProgressIndicator(
-            progress = fraction,
+            progress = { fraction },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(3.dp)
@@ -473,9 +591,13 @@ private fun ResultContent(
     itemStates: Map<Int, ItemState>,
     downloading: Boolean,
     error: String?,
+    selectionMode: Boolean,
+    selectedIndices: Set<Int>,
+    onToggleSelect: (Int) -> Unit,
     onDownloadOne: (Int) -> Unit,
     onLiveChoice: (Int) -> Unit,
     onPreview: (Int) -> Unit,
+    onDismissError: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val platform = Platform.fromKey(result.platform)
@@ -486,6 +608,9 @@ private fun ResultContent(
 
     var entrance by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { entrance = true }
+
+    // 与历史列表的封面共用同一个 key；从首页直接解析进入时没有源端，过渡自动退化为普通切换。
+    val sharedCoverKey = remember { ParseResultStore.historyId?.let { "history-cover-$it" } }
 
     // 图片网格几乎贴边（2dp），文字块保持 20dp：网格是「相册」，文字是「版面」。
     val gap = 2.dp
@@ -519,9 +644,8 @@ private fun ResultContent(
                             Spacer(Modifier.width(9.dp))
                         }
                         val meta = buildList {
-                            if (imageMediaIndices.isNotEmpty()) add("${imageMediaIndices.size} 张原图")
+                            if (imageMediaIndices.isNotEmpty()) add("${imageMediaIndices.size} 张图片")
                             if (videoIndices.isNotEmpty()) add("${videoIndices.size} 段视频")
-                            add("原画质")
                         }.joinToString(" · ")
                         Text(
                             text = meta,
@@ -577,16 +701,30 @@ private fun ResultContent(
                                         .clip(Radii.grid)
                                         .background(MaterialTheme.colorScheme.surfaceVariant),
                                 )
-                                // 位置取右上角：ExoPlayer 的控制条在底部
-                                MediaSaveAction(
-                                    state = itemStates[mediaIndex] ?: ItemState.Idle,
-                                    downloading = downloading,
-                                    live = false,
-                                    labelBase = "视频",
-                                    onDownload = { onDownloadOne(mediaIndex) },
-                                    onLiveChoice = {},
-                                    align = Alignment.TopEnd,
-                                )
+                                if (selectionMode) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clickable { onToggleSelect(mediaIndex) },
+                                    )
+                                    SelectionMark(
+                                        selected = mediaIndex in selectedIndices,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .padding(7.dp),
+                                    )
+                                } else {
+                                    // 位置取右上角：ExoPlayer 的控制条在底部
+                                    MediaSaveAction(
+                                        state = itemStates[mediaIndex] ?: ItemState.Idle,
+                                        downloading = downloading,
+                                        live = false,
+                                        labelBase = "视频",
+                                        onDownload = { onDownloadOne(mediaIndex) },
+                                        onLiveChoice = {},
+                                        align = Alignment.TopEnd,
+                                    )
+                                }
                             }
                         }
                         Spacer(Modifier.height(16.dp))
@@ -634,9 +772,13 @@ private fun ResultContent(
                         index = mediaIndex,
                         state = itemStates[mediaIndex] ?: ItemState.Idle,
                         downloading = downloading,
+                        selectionMode = selectionMode,
+                        selected = mediaIndex in selectedIndices,
+                        onToggleSelect = { onToggleSelect(mediaIndex) },
                         onDownload = { onDownloadOne(mediaIndex) },
                         onLiveChoice = { onLiveChoice(mediaIndex) },
                         onClick = { onPreview(imagePosition) },
+                        sharedKey = if (imagePosition == 0) sharedCoverKey else null,
                         modifier = Modifier
                             .fillMaxWidth()
                             .graphicsLayer { this.alpha = alpha }
@@ -661,14 +803,20 @@ private fun ResultContent(
                     Column(modifier = Modifier.padding(horizontal = textPadding)) {
                         Spacer(Modifier.height(12.dp))
                         com.linkfetch.app.ui.components.ErrorCard(it)
-                        Spacer(Modifier.height(12.dp))
+                        TextButton(
+                            onClick = onDismissError,
+                            modifier = Modifier.align(Alignment.End),
+                        ) {
+                            Text("关闭提示")
+                        }
+                        Spacer(Modifier.height(4.dp))
                     }
                 }
             }
 
             item(key = "note", span = { GridItemSpan(maxLineSpan) }) {
                 Text(
-                    text = "原图直存，不经过二次压缩。",
+                    text = "保存时不经过二次压缩。",
                     modifier = Modifier.padding(
                         start = textPadding,
                         end = textPadding,
@@ -686,8 +834,8 @@ private fun ResultContent(
 /**
  * 图片信息条：格式 / 单张尺寸 / 数量。
  *
- * 这三项都来自解析结果或图片 URL 本身，不做任何推断 —— 拿不到时就写「原图尺寸」，
- * 不编一个好看的数字。三段之间用 1dp 竖线分隔，与卡片边框同一灰度。
+ * 三项都来自解析结果或图片 URL 本身，不做任何推断。拿不到尺寸时整格隐藏，
+ * 不显示「—」占位。各段之间用 1dp 竖线分隔，与卡片边框同一灰度。
  */
 @Composable
 private fun FileInfoStrip(
@@ -699,7 +847,7 @@ private fun FileInfoStrip(
     val hasSize = (firstImage?.width ?: 0) > 0 && (firstImage?.height ?: 0) > 0
     val cells = buildList {
         add("格式" to formatLabel(firstImage?.url.orEmpty()))
-        add("单张" to if (hasSize) "${firstImage?.width} × ${firstImage?.height}" else "原图尺寸")
+        if (hasSize) add("单张" to "${firstImage?.width} × ${firstImage?.height}")
         add("数量" to "$count 张")
     }
     Row(modifier = modifier.fillMaxWidth()) {
@@ -752,24 +900,36 @@ private fun formatLabel(url: String): String {
 /**
  * 结果页图片单元：容器透明，圆角只留 [Radii.grid]，让整组图片连成一片。
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun MediaCard(
     item: MediaItemDto,
     index: Int,
     state: ItemState,
     downloading: Boolean,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onToggleSelect: () -> Unit,
     onDownload: () -> Unit,
     onLiveChoice: () -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    sharedKey: String? = null,
 ) {
+    val sharedModifier = if (sharedKey != null) Modifier.sharedCover(sharedKey) else Modifier
     Box(modifier = modifier) {
         ShimmerImage(
             model = item.url,
             modifier = Modifier
                 .fillMaxSize()
                 .clip(Radii.grid)
-                .clickable(onClickLabel = "全屏预览", onClick = onClick),
+                .combinedClickable(
+                    onClickLabel = if (selectionMode) "选择第 ${index + 1} 张图片" else "全屏预览",
+                    onLongClickLabel = "选择第 ${index + 1} 张图片",
+                    onLongClick = onToggleSelect,
+                    onClick = { if (selectionMode) onToggleSelect() else onClick() },
+                )
+                .then(sharedModifier),
             shape = Radii.grid,
             contentDescription = "第 ${index + 1} 张图片",
         )
@@ -792,14 +952,51 @@ private fun MediaCard(
                 )
             }
         }
-        MediaSaveAction(
-            state = state,
-            downloading = downloading,
-            live = item.live,
-            labelBase = "第 ${index + 1} 张",
-            onDownload = onDownload,
-            onLiveChoice = onLiveChoice,
-        )
+        if (selectionMode) {
+            SelectionMark(
+                selected = selected,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(7.dp),
+            )
+        } else {
+            MediaSaveAction(
+                state = state,
+                downloading = downloading,
+                live = item.live,
+                labelBase = "第 ${index + 1} 张",
+                onDownload = onDownload,
+                onLiveChoice = onLiveChoice,
+            )
+        }
+    }
+}
+
+/**
+ * 多选模式的勾选标记，与保存状态共用同一套视觉：
+ * 选中时只是裸的黑色方块勾（同「已保存」）；未选中时用下载按钮同款的
+ * 30dp 浅色圆角小方底 + 细边 + 空框，保证在白色图片上也能看清。
+ */
+@Composable
+private fun SelectionMark(selected: Boolean, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.size(30.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            SquareCheck(size = 19.dp)
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(Radii.small)
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.82f))
+                    .border(1.dp, StrokeColors.card.copy(alpha = 0.7f), Radii.small),
+                contentAlignment = Alignment.Center,
+            ) {
+                SquareCheck(size = 18.dp, checked = false)
+            }
+        }
     }
 }
 
@@ -828,7 +1025,7 @@ private fun BoxScope.MediaSaveAction(
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator(
-                        progress = state.progress,
+                        progress = { state.progress },
                         modifier = Modifier.size(30.dp),
                         strokeWidth = 2.dp,
                         color = MaterialTheme.colorScheme.onSurface,
@@ -965,7 +1162,7 @@ private fun LiveChoiceDialog(
             Column {
                 Text(
                     text = if (failed) {
-                        "Live 视频保存失败。你可以重试，或仅保存静态原图。"
+                        "Live 视频保存失败。你可以重试，或仅保存静态图片。"
                     } else {
                         "Live 图会保存为单个动态照片（Motion Photo），Google 相册、小米、OPPO 等图库可直接播放；部分第三方相册仅显示静态图。"
                     },
@@ -993,4 +1190,18 @@ private fun LiveChoiceDialog(
             }
         },
     )
+}
+
+/** 选一个能处理该 URL、且不是本应用的处理者；没有则返回 null。 */
+private fun resolveBrowserIntent(context: Context, url: String): Intent? {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+    val candidates = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        context.packageManager.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0))
+    } else {
+        @Suppress("DEPRECATION")
+        context.packageManager.queryIntentActivities(intent, 0)
+    }
+    val target = candidates.firstOrNull { it.activityInfo.packageName != context.packageName }
+        ?: return null
+    return intent.setPackage(target.activityInfo.packageName)
 }

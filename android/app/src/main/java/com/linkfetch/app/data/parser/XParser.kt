@@ -106,6 +106,12 @@ class XParser(
         val requestHeaders = if (googlebot) googlebotHeaders() else headers()
         return client.newCall(Request.Builder().url(apiUrl).headers(requestHeaders).build()).execute().use { resp ->
             when (resp.code) {
+                // 401 不是推文问题，而是 X 侧接口凭证被拒；与"网络不通/风控"区分开，
+                // 否则用户会反复切换网络却始终无法恢复。
+                401 -> throw LocalParseException(
+                    "credential_expired",
+                    "X 接口拒绝了本次请求（401），接口凭证可能已失效；请更新 App 或稍后重试",
+                )
                 404 -> throw LocalParseException("parse_failed", "推文不存在或已删除")
                 403, 429 -> throw LocalParseException("rate_limited", "X 触发了风控，请稍后重试")
             }

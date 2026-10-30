@@ -11,4 +11,14 @@
           属性本就会被忽略，此处不写以避免 lint 报 NewApi。
         -->
     </style>
+
+    <!--
+      启动主题：Android 12+ 用系统 SplashScreen，低版本由 core-splashscreen 兼容。
+      图标复用桌面图标（墨底白链），浅色/深色启动背景上都能看清。
+    -->
+    <style name="Theme.LinkFetch.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/window_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.LinkFetch</item>
+    </style>
 </resources>

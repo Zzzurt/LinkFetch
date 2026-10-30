@@ -1,6 +1,5 @@
 package com.linkfetch.app.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -20,7 +19,6 @@ val PaperDim = Color(0xFFE9E9EC)
 val CardWhite = Color(0xFFFFFFFF)
 val Ink = Color(0xFF0A0A0A)
 val Ink2 = Color(0xFF6A6A73)
-val Ink3 = Color(0xFF9C9CA5)
 val Line = Color(0xFFE2E2E6)
 val LineStrong = Color(0xFFD3D3D9)
 
@@ -30,7 +28,6 @@ val NightCard = Color(0xFF141417)
 val NightRaised = Color(0xFF1B1B1F)
 val NightInk = Color(0xFFF4F4F6)
 val NightInk2 = Color(0xFFA2A2AA)
-val NightInk3 = Color(0xFF6E6E76)
 val NightLine = Color(0xFF26262B)
 val NightLineStrong = Color(0xFF34343A)
 
@@ -55,31 +52,31 @@ fun onPlatform(accent: Color): Color =
  */
 object TextColors {
     val muted: Color
-        @Composable get() = if (isSystemInDarkTheme()) NightInk2 else Ink2
+        @Composable get() = if (LocalDarkTheme.current) NightInk2 else Ink2
 }
 
 /** 卡片 / 输入框描边：黑白灰界面靠它建立边界，不用阴影。 */
 object StrokeColors {
     val card: Color
-        @Composable get() = if (isSystemInDarkTheme()) NightLine else Line
+        @Composable get() = if (LocalDarkTheme.current) NightLine else Line
 }
 
 /** 低一档的容器（设置页的提示块）：比纸更实、比卡更暗。 */
 object TintedSurfaceColors {
     val container: Color
-        @Composable get() = if (isSystemInDarkTheme()) NightRaised else PaperDim
+        @Composable get() = if (LocalDarkTheme.current) NightRaised else PaperDim
 }
 
 /** 主文字 / 反相文字 */
 object InkColors {
     val main: Color
-        @Composable get() = if (isSystemInDarkTheme()) NightInk else Ink
+        @Composable get() = if (LocalDarkTheme.current) NightInk else Ink
 
     /** 反相块（黑色 CTA）上的文字 */
     val inverse: Color
-        @Composable get() = if (isSystemInDarkTheme()) NightPaper else CardWhite
+        @Composable get() = if (LocalDarkTheme.current) NightPaper else CardWhite
 
     /** 反相块底色 */
     val inverseSurface: Color
-        @Composable get() = if (isSystemInDarkTheme()) NightInk else Ink
+        @Composable get() = if (LocalDarkTheme.current) NightInk else Ink
 }

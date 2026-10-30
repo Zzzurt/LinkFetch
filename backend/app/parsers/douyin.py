@@ -67,11 +67,11 @@ class DouyinParser(BaseParser):
         if cookie:
             headers["Cookie"] = cookie
 
-        resp = await self.client.get(url, headers=headers, follow_redirects=True)
+        resp = await self.fetch(url, headers=headers)
         # 重定向链中任意 URL 都可能带作品 ID（移动 UA 可能落在 iesdouyin.com/share/slides/...）
         content_id = None
         kind = "note"
-        for candidate in [str(resp.url)] + [str(h.url) for h in resp.history]:
+        for candidate in [resp.url, *resp.history]:
             match = _ITEM_RE.search(candidate)
             if match:
                 content_id = match.group(1)
@@ -91,7 +91,7 @@ class DouyinParser(BaseParser):
         last_error: Optional[ParseError] = None
         for share_url in attempts:
             try:
-                page = await self.client.get(share_url, headers=headers, follow_redirects=True)
+                page = await self.fetch(share_url, headers=headers)
                 if page.status_code in (403, 429):
                     raise ParseError(RATE_LIMITED, "抖音触发了风控，请稍后重试")
                 state = self._extract_router_data(page.text)
@@ -111,7 +111,7 @@ class DouyinParser(BaseParser):
 
         try:
             api = f"{_PC_DETAIL_API}?aweme_id={content_id}"
-            page = await self.client.get(api, headers=spider_headers)
+            page = await self.fetch(api, headers=spider_headers)
             if page.status_code in (403, 429):
                 raise ParseError(RATE_LIMITED, "抖音触发了风控，请稍后重试")
             detail = (page.json().get("aweme_detail")) or None
@@ -131,7 +131,7 @@ class DouyinParser(BaseParser):
         # 分享页全部失败时回退到 iteminfo 接口
         try:
             api = f"{_SHARE_BASES[0]}/web/api/v2/aweme/iteminfo/?item_ids={content_id}"
-            page = await self.client.get(api, headers=headers)
+            page = await self.fetch(api, headers=headers)
             if page.status_code in (403, 429):
                 raise ParseError(RATE_LIMITED, "抖音触发了风控，请稍后重试")
             items = (page.json().get("item_list")) or []
@@ -214,9 +214,7 @@ class DouyinParser(BaseParser):
             _NOTE_PAGE_URL.format(content_id=content_id),
         ):
             try:
-                page = await self.client.get(
-                    url, headers=headers, follow_redirects=True
-                )
+                page = await self.fetch(url, headers=headers)
                 if page.status_code in (403, 429):
                     raise ParseError(RATE_LIMITED, "抖音触发了风控，请稍后重试")
                 item = self._ld_json_to_item(self._extract_ld_json(page.text))

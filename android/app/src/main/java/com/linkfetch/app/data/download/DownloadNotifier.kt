@@ -1,4 +1,4 @@
-package com.linkfetch.app.ui.result
+package com.linkfetch.app.data.download
 
 import android.Manifest
 import android.app.PendingIntent

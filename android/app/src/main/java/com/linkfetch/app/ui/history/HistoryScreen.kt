@@ -1,5 +1,6 @@
 package com.linkfetch.app.ui.history
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -24,16 +25,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,7 +44,9 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +54,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -65,9 +72,13 @@ import com.linkfetch.app.ui.components.CoverPlaceholder
 import com.linkfetch.app.ui.components.EmptyState
 import com.linkfetch.app.ui.components.GhostPill
 import com.linkfetch.app.ui.components.PageHeader
+import com.linkfetch.app.ui.components.PaperMenu
+import com.linkfetch.app.ui.components.PaperMenuDivider
+import com.linkfetch.app.ui.components.PaperMenuItem
 import com.linkfetch.app.ui.components.ScreenFadeIn
 import com.linkfetch.app.ui.components.ShimmerImage
 import com.linkfetch.app.ui.components.SquareCheck
+import com.linkfetch.app.ui.components.sharedCover
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.StrokeColors
@@ -87,16 +98,17 @@ fun HistoryScreen(
     container: AppContainer,
     onOpenResult: () -> Unit,
     onGoHome: () -> Unit,
+    onSelectionModeChange: (Boolean) -> Unit = {},
+    selectionBarState: HistorySelectionBarState,
 ) {
     val viewModel: HistoryViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
                 HistoryViewModel(
                     dao = container.historyDao,
+                    repository = container.historyRepository,
                     json = container.json,
-                    localParseClient = container.localParseClient,
-                    apiClient = container.apiClient,
-                    parseModeProvider = { container.settingsRepository.settings.value.parseMode },
+                    parseService = container.parseService,
                 )
             }
         },
@@ -111,11 +123,30 @@ fun HistoryScreen(
     // 单条删除确认（与批量删除一致，防误删）
     var confirmDelete by remember { mutableStateOf<HistoryEntity?>(null) }
 
-    LaunchedEffect(viewModel.message) {
-        viewModel.message?.let {
-            snackbarHostState.showSnackbar(it)
-            viewModel.consumeMessage()
+    // 多选期间底部换成「全选 / 删除」操作条，Dock 要让位；离页时恢复 Dock。
+    // 用 SideEffect 而不是 LaunchedEffect：状态变化当帧就通知导航层，避免操作条晚一拍出现。
+    SideEffect {
+        onSelectionModeChange(viewModel.selectionMode)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            onSelectionModeChange(false)
+            // 操作条由导航层持有；离页时清掉回调，避免它继续引用本页的 ViewModel
+            selectionBarState.allSelected = false
+            selectionBarState.onSelectAllOrClear = {}
+            selectionBarState.onDelete = {}
         }
+    }
+
+    // 多选态下系统返回键先退出多选，而不是直接退出应用
+    BackHandler(enabled = viewModel.selectionMode) {
+        viewModel.clearSelection()
+    }
+
+    LaunchedEffect(viewModel.message) {
+        val text = viewModel.message ?: return@LaunchedEffect
+        viewModel.consumeMessage()
+        snackbarHostState.showSnackbar(text)
     }
 
     // 用 Box 承载 Snackbar 浮层（消息反馈与其他页统一走 Snackbar，原先用 Toast 样式不一致）；
@@ -134,6 +165,8 @@ fun HistoryScreen(
                     if (viewModel.selectionMode) {
                         GhostPill(text = "取消", onClick = viewModel::clearSelection)
                     } else if (items.isNotEmpty()) {
+                        SearchToggle(active = viewModel.searchOpen, onClick = viewModel::toggleSearch)
+                        Spacer(Modifier.width(8.dp))
                         // 常驻的多选入口：长按虽然也能进多选，但界面上没有任何提示，多数用户发现不了。
                         // 这里只留「选择」一个动作 —— 进去之后可以全选再删。
                         GhostPill(text = "选择", onClick = viewModel::enterSelection)
@@ -169,10 +202,27 @@ fun HistoryScreen(
                 }
             }
 
+            if (viewModel.searchOpen) {
+                Spacer(Modifier.height(10.dp))
+                HistorySearchField(
+                    value = viewModel.query,
+                    onValueChange = viewModel::onQueryChange,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
+            }
+
             Spacer(Modifier.height(6.dp))
 
             val visible = viewModel.visibleItems
             val allSelected = visible.isNotEmpty() && visible.all { it.id in viewModel.selectedIds }
+            // 操作条在导航层渲染；这里只把当前状态和动作交出去，不参与底栏布局。
+            val selectAllOrClear = remember(viewModel) { viewModel::selectAllOrClear }
+            val requestDeleteSelected = remember(viewModel) { viewModel::requestDeleteSelected }
+            SideEffect {
+                selectionBarState.allSelected = allSelected
+                selectionBarState.onSelectAllOrClear = selectAllOrClear
+                selectionBarState.onDelete = requestDeleteSelected
+            }
             if (visible.isEmpty()) {
                 Box(
                     modifier = Modifier
@@ -183,9 +233,17 @@ fun HistoryScreen(
                     if (items.isEmpty()) {
                         EmptyState(
                             title = "还没有取回记录",
-                            message = "在首页粘贴一条分享链接，\n取回的原图会按天归档在这里。",
+                            message = "在首页粘贴一条分享链接，\n取回的内容会按天归档在这里。",
                             actionText = "去首页粘贴",
                             onAction = onGoHome,
+                        )
+                    } else if (viewModel.query.isNotBlank()) {
+                        EmptyState(
+                            title = "没有匹配的记录",
+                            message = "标题和作者里都没有「${viewModel.query.trim()}」",
+                            icon = Icons.Outlined.SearchOff,
+                            actionText = "清除搜索",
+                            onAction = { viewModel.onQueryChange("") },
                         )
                     } else {
                         EmptyState(
@@ -252,58 +310,13 @@ fun HistoryScreen(
                 }
             }
 
-            // 多选模式：底部操作条（全选 / 删除），拇指可达
-            if (viewModel.selectionMode) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(1.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant),
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surface)
-                            .padding(horizontal = 20.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        GhostPill(
-                            text = if (allSelected) "取消全选" else "全选",
-                            onClick = viewModel::selectAllOrClear,
-                        )
-                        Spacer(Modifier.weight(1f))
-                        Row(
-                            modifier = Modifier
-                                .clip(Radii.pill)
-                                .clickable(onClick = viewModel::requestDeleteSelected)
-                                .padding(horizontal = 14.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Icon(
-                                Icons.Filled.Delete,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "删除",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                }
-            }
         }
 
         SnackbarHost(
             hostState = snackbarHostState,
-            // 多选时把浮层抬到底部操作条之上
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = if (viewModel.selectionMode) 56.dp else 0.dp),
+            // 操作条现在是导航层 bottomBar 的一部分，Scaffold 的内边距已经把它让开，
+            // 这里不再手动抬高浮层。
+            modifier = Modifier.align(Alignment.BottomCenter),
         )
     }
 
@@ -409,6 +422,95 @@ private fun HistoryChip(
     }
 }
 
+/** 与 GhostPill 同高的小圆钮：展开/收起搜索。 */
+@Composable
+private fun SearchToggle(
+    active: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, StrokeColors.card, CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = if (active) Icons.Filled.Close else Icons.Filled.Search,
+            contentDescription = if (active) "关闭搜索" else "搜索",
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
+
+/** 历史搜索框：标题与作者的前端过滤，展开即聚焦。 */
+@Composable
+private fun HistorySearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val focusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(40.dp)
+            .clip(Radii.field)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, StrokeColors.card, Radii.field)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            Icons.Filled.Search,
+            contentDescription = null,
+            tint = TextColors.muted,
+            modifier = Modifier.size(15.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            modifier = Modifier
+                .weight(1f)
+                .focusRequester(focusRequester),
+            singleLine = true,
+            textStyle = TextStyle(
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+            ),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
+            decorationBox = { innerTextField ->
+                Box {
+                    if (value.isEmpty()) {
+                        Text(
+                            text = "搜索标题或作者",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                            color = TextColors.muted,
+                        )
+                    }
+                    innerTextField()
+                }
+            },
+        )
+        if (value.isNotEmpty()) {
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = "清除搜索",
+                tint = TextColors.muted,
+                modifier = Modifier
+                    .size(15.dp)
+                    .clickable { onValueChange("") },
+            )
+        }
+    }
+}
+
 /** 按日期分组：今天 / 昨天 / M月d日，组内保持时间倒序 */
 private fun groupByDay(items: List<HistoryEntity>): List<Pair<String, List<HistoryEntity>>> {
     val today = LocalDate.now()
@@ -486,7 +588,8 @@ private fun HistoryRow(
         Box(
             modifier = Modifier
                 .size(56.dp)
-                .clip(Radii.small),
+                .clip(Radii.small)
+                .sharedCover("history-cover-${entity.id}"),
         ) {
             if (entity.coverUrl != null) {
                 // 加载失败也走同一个占位：封面字段可能存的是视频地址（旧记录尤其常见），
@@ -563,34 +666,23 @@ private fun HistoryRow(
                             modifier = Modifier.size(18.dp),
                         )
                     }
-                    DropdownMenu(
+                    PaperMenu(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false },
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("重新解析") },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Filled.Refresh,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            },
+                        PaperMenuItem(
+                            icon = Icons.Filled.Refresh,
+                            label = "重新解析",
                             onClick = {
                                 menuOpen = false
                                 onReparse()
                             },
                         )
-                        DropdownMenuItem(
-                            text = { Text("删除", color = MaterialTheme.colorScheme.error) },
-                            leadingIcon = {
-                                Icon(
-                                    Icons.Filled.Delete,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            },
+                        PaperMenuDivider()
+                        PaperMenuItem(
+                            icon = Icons.Filled.Delete,
+                            label = "删除",
+                            destructive = true,
                             onClick = {
                                 menuOpen = false
                                 onDelete()
