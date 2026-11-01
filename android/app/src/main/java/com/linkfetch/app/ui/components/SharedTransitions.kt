@@ -22,18 +22,9 @@ val LocalAnimatedVisibilityScope = staticCompositionLocalOf<AnimatedVisibilitySc
 /**
  * 历史列表封面 → 结果页首图的共享元素。
  *
- * 只有两端都在组合树里、且 key 相同才会产生过渡；从首页直接解析进入结果页时
- * 没有源端，自然退化为普通页面切换。
+ * 1.9.0 线上反馈：几十张图的记录在 LazyVerticalGrid 中会触发 Compose
+ * “Placement happened before lookahead” 崩溃。升级 Compose 并验证大图集前先停用，
+ * 页面切换仍由 ScreenFadeIn 承担。
  */
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun Modifier.sharedCover(key: Any): Modifier {
-    val sharedScope = LocalSharedTransitionScope.current ?: return this
-    val animatedScope = LocalAnimatedVisibilityScope.current ?: return this
-    return with(sharedScope) {
-        this@sharedCover.sharedElement(
-            rememberSharedContentState(key),
-            animatedScope,
-        )
-    }
-}
+fun Modifier.sharedCover(@Suppress("UNUSED_PARAMETER") key: Any): Modifier = this

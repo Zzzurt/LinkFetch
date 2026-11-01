@@ -2,7 +2,7 @@
 
 **粘贴链接，取回原片。** 从某书 / 某音 / 某博 / 某推 取回无水印的原图与原视频，按天归档，原样保存到相册。
 
-![version](https://img.shields.io/badge/version-1.9.0-0A0A0A?style=flat-square)
+![version](https://img.shields.io/badge/version-1.9.1-0A0A0A?style=flat-square)
 ![license](https://img.shields.io/badge/license-Apache--2.0-0A0A0A?style=flat-square)
 ![android](https://img.shields.io/badge/Android-8.0%2B-0A0A0A?style=flat-square)
 ![mode](https://img.shields.io/badge/direct-no%20server-0A0A0A?style=flat-square)
@@ -20,7 +20,7 @@
 
 ## 下载
 
-前往 [Releases](https://github.com/Zzzurt/LinkFetch/releases/latest) 下载 `LinkFetch-v1.9.0.apk`（约 2.8 MB），安装即用。版本变化见 [CHANGELOG](CHANGELOG.md)。
+前往 [Releases](https://github.com/Zzzurt/LinkFetch/releases/latest) 下载 `LinkFetch-v1.9.1.apk`（约 2.8 MB），安装即用。版本变化见 [CHANGELOG](CHANGELOG.md)。
 
 - 最低系统 Android 8.0（API 26），默认直连，无需服务器
 - 某书 / 某音 / 某博 已验证可直连；某推 需能访问海外网络
