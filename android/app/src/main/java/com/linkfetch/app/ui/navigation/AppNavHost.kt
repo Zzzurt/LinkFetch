@@ -1,8 +1,6 @@
 package com.linkfetch.app.ui.navigation
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -67,9 +65,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.linkfetch.app.data.AppContainer
-import com.linkfetch.app.ui.components.LocalAnimatedVisibilityScope
 import com.linkfetch.app.ui.components.LocalScreenEnterFromLeft
-import com.linkfetch.app.ui.components.LocalSharedTransitionScope
 import com.linkfetch.app.ui.history.HistoryScreen
 import com.linkfetch.app.ui.history.HistorySelectionBarState
 import com.linkfetch.app.ui.home.HomeScreen
@@ -113,7 +109,6 @@ private fun NavHostController.navigateToTab(route: String) {
     }
 }
 
-@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun AppNavHost(
     container: AppContainer,
@@ -195,72 +190,49 @@ fun AppNavHost(
             // 用 CompositionLocal 下发而不是逐页传参 —— 四个页面的 ScreenFadeIn 调用点
             // 就不必各自感知导航顺序这件事。
             CompositionLocalProvider(LocalScreenEnterFromLeft provides enterFromLeft) {
-                SharedTransitionLayout(
+                Box(
                     modifier = Modifier
                         .widthIn(max = PageMaxWidth)
                         .fillMaxHeight(),
                 ) {
-                    CompositionLocalProvider(LocalSharedTransitionScope provides this) {
-                        NavHost(
-                            navController = navController,
-                            startDestination = Route.HOME,
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            composable(Route.HOME) {
-                                WithAnimatedScope {
-                                    HomeScreen(
-                                        container = container,
-                                        onOpenResult = { navController.navigate(Route.RESULT) },
-                                        onOpenHistory = { navController.navigateToTab(Route.HISTORY) },
-                                        // 与底部 Tab 走同一套导航（navigateToTab）
-                                        onOpenSettings = { navController.navigateToTab(Route.SETTINGS) },
-                                        sharedText = sharedText,
-                                        onSharedTextConsumed = onSharedTextConsumed,
-                                    )
-                                }
-                            }
-                            composable(Route.RESULT) {
-                                WithAnimatedScope {
-                                    ResultScreen(
-                                        container = container,
-                                        onBack = { navController.popBackStack() },
-                                    )
-                                }
-                            }
-                            composable(Route.HISTORY) {
-                                WithAnimatedScope {
-                                    HistoryScreen(
-                                        container = container,
-                                        onOpenResult = { navController.navigate(Route.RESULT) },
-                                        onGoHome = { navController.navigateToTab(Route.HOME) },
-                                        onSelectionModeChange = { historySelecting = it },
-                                        selectionBarState = historySelectionBar,
-                                    )
-                                }
-                            }
-                            composable(Route.SETTINGS) {
-                                WithAnimatedScope {
-                                    SettingsScreen(container = container)
-                                }
-                            }
+                    NavHost(
+                        navController = navController,
+                        startDestination = Route.HOME,
+                        modifier = Modifier.fillMaxSize(),
+                    ) {
+                        composable(Route.HOME) {
+                            HomeScreen(
+                                container = container,
+                                onOpenResult = { navController.navigate(Route.RESULT) },
+                                onOpenHistory = { navController.navigateToTab(Route.HISTORY) },
+                                // 与底部 Tab 走同一套导航（navigateToTab）
+                                onOpenSettings = { navController.navigateToTab(Route.SETTINGS) },
+                                sharedText = sharedText,
+                                onSharedTextConsumed = onSharedTextConsumed,
+                            )
+                        }
+                        composable(Route.RESULT) {
+                            ResultScreen(
+                                container = container,
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
+                        composable(Route.HISTORY) {
+                            HistoryScreen(
+                                container = container,
+                                onOpenResult = { navController.navigate(Route.RESULT) },
+                                onGoHome = { navController.navigateToTab(Route.HOME) },
+                                onSelectionModeChange = { historySelecting = it },
+                                selectionBarState = historySelectionBar,
+                            )
+                        }
+                        composable(Route.SETTINGS) {
+                            SettingsScreen(container = container)
                         }
                     }
                 }
             }
         }
-    }
-}
-
-/**
- * 把 Navigation 给每个目的地提供的 [androidx.compose.animation.AnimatedContentScope]
- * 下发给页面，供共享元素使用。接收者 `this` 就是该目的地的 AnimatedVisibilityScope。
- */
-@Composable
-private fun androidx.compose.animation.AnimatedContentScope.WithAnimatedScope(
-    content: @Composable () -> Unit,
-) {
-    CompositionLocalProvider(LocalAnimatedVisibilityScope provides this) {
-        content()
     }
 }
 

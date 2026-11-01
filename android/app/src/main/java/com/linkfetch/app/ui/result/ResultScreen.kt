@@ -96,7 +96,6 @@ import com.linkfetch.app.ui.components.ScreenFadeIn
 import com.linkfetch.app.ui.components.SectionHeader
 import com.linkfetch.app.ui.components.ShimmerImage
 import com.linkfetch.app.ui.components.SquareCheck
-import com.linkfetch.app.ui.components.sharedCover
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.StrokeColors
@@ -609,9 +608,6 @@ private fun ResultContent(
     var entrance by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { entrance = true }
 
-    // 与历史列表的封面共用同一个 key；从首页直接解析进入时没有源端，过渡自动退化为普通切换。
-    val sharedCoverKey = remember { ParseResultStore.historyId?.let { "history-cover-$it" } }
-
     // 图片网格几乎贴边（2dp），文字块保持 20dp：网格是「相册」，文字是「版面」。
     val gap = 2.dp
     val outerPadding = 2.dp
@@ -778,7 +774,6 @@ private fun ResultContent(
                         onDownload = { onDownloadOne(mediaIndex) },
                         onLiveChoice = { onLiveChoice(mediaIndex) },
                         onClick = { onPreview(imagePosition) },
-                        sharedKey = if (imagePosition == 0) sharedCoverKey else null,
                         modifier = Modifier
                             .fillMaxWidth()
                             .graphicsLayer { this.alpha = alpha }
@@ -914,9 +909,7 @@ private fun MediaCard(
     onLiveChoice: () -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    sharedKey: String? = null,
 ) {
-    val sharedModifier = if (sharedKey != null) Modifier.sharedCover(sharedKey) else Modifier
     Box(modifier = modifier) {
         ShimmerImage(
             model = item.url,
@@ -928,8 +921,7 @@ private fun MediaCard(
                     onLongClickLabel = "选择第 ${index + 1} 张图片",
                     onLongClick = onToggleSelect,
                     onClick = { if (selectionMode) onToggleSelect() else onClick() },
-                )
-                .then(sharedModifier),
+                ),
             shape = Radii.grid,
             contentDescription = "第 ${index + 1} 张图片",
         )

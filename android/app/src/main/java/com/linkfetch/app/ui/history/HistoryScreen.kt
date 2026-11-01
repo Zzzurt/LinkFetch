@@ -78,7 +78,6 @@ import com.linkfetch.app.ui.components.PaperMenuItem
 import com.linkfetch.app.ui.components.ScreenFadeIn
 import com.linkfetch.app.ui.components.ShimmerImage
 import com.linkfetch.app.ui.components.SquareCheck
-import com.linkfetch.app.ui.components.sharedCover
 import com.linkfetch.app.ui.theme.Radii
 import com.linkfetch.app.ui.theme.Spacing
 import com.linkfetch.app.ui.theme.StrokeColors
@@ -588,8 +587,7 @@ private fun HistoryRow(
         Box(
             modifier = Modifier
                 .size(56.dp)
-                .clip(Radii.small)
-                .sharedCover("history-cover-${entity.id}"),
+                .clip(Radii.small),
         ) {
             if (entity.coverUrl != null) {
                 // 加载失败也走同一个占位：封面字段可能存的是视频地址（旧记录尤其常见），
